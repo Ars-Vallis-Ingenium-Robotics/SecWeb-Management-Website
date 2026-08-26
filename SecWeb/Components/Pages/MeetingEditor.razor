@@ -1,0 +1,1772 @@
+@page "/meetings/{Id:int}"
+
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using SecWeb.Data
+@using SecWeb.Data.Models
+@using SecWeb.Services
+
+@attribute [Authorize]
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject MeetingService MeetingService
+@inject NavigationManager Navigation
+
+<PageTitle>Meeting</PageTitle>
+
+
+@if (isLoading)
+{
+    <p>
+        <em>Loading meeting...</em>
+    </p>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <div class="alert alert-danger">
+        @loadError
+    </div>
+
+    <button type="button"
+            class="btn btn-secondary"
+            @onclick="BackToMeetings">
+
+        Back to Meetings
+
+    </button>
+}
+else if (meeting != null)
+{
+    @* =========================================================
+       PAGE HEADER
+       ========================================================= *@
+
+    <div class="d-flex justify-content-between align-items-start mb-4">
+
+        <div>
+
+            <h1>
+                @meeting.Title
+            </h1>
+
+
+            @if (meeting.Team?.Project != null)
+            {
+                <p class="mb-1">
+
+                    <strong>
+                        Project:
+                    </strong>
+
+                    @meeting.Team.Project.Name
+
+                </p>
+
+
+                <p class="mb-0">
+
+                    <strong>
+                        Team / Subsystem:
+                    </strong>
+
+                    @meeting.Team.Name
+
+                </p>
+            }
+            else
+            {
+                <p class="text-warning mb-0">
+                    This meeting is not currently assigned to a team.
+                </p>
+            }
+
+        </div>
+
+
+        <button type="button"
+                class="btn btn-outline-secondary"
+                @onclick="BackToMeetings">
+
+            Back
+
+        </button>
+
+    </div>
+
+
+    @* =========================================================
+       VIEW-ONLY NOTICE
+       ========================================================= *@
+
+    @if (!canManageMeeting)
+    {
+        <div class="alert alert-info">
+
+            You can view this meeting because you are a member
+            of this team.
+
+            Only the team Lead or an Admin can edit the meeting
+            or delegate tasks.
+
+        </div>
+    }
+
+
+    @* =========================================================
+       MESSAGES
+       ========================================================= *@
+
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <div class="alert alert-success">
+            @successMessage
+        </div>
+    }
+
+
+    @if (!string.IsNullOrWhiteSpace(actionError))
+    {
+        <div class="alert alert-danger">
+            @actionError
+        </div>
+    }
+
+
+    @* =========================================================
+       MEETING INFORMATION / SEGMENTS
+       ========================================================= *@
+
+    <EditForm Model="meeting"
+              OnValidSubmit="SaveMeetingAsync">
+
+        <DataAnnotationsValidator />
+
+        <ValidationSummary />
+
+
+        @* =====================================================
+           MEETING INFORMATION
+           ===================================================== *@
+
+        <div class="card mb-4">
+
+            <div class="card-header">
+
+                <strong>
+                    Meeting Information
+                </strong>
+
+            </div>
+
+
+            <div class="card-body">
+
+                @* =============================================
+                   PROJECT / TEAM
+                   ============================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Project / Team
+                    </label>
+
+
+                    @if (canManageMeeting)
+                    {
+                        <InputSelect class="form-select"
+                                     @bind-Value="meeting.ProjectTeamId">
+
+                            <option value="">
+                                Select a team or subsystem...
+                            </option>
+
+
+                            @foreach (
+                                ProjectTeam team
+                                in manageableTeams)
+                            {
+                                <option value="@team.Id">
+
+                                    @GetTeamDisplayName(team)
+
+                                </option>
+                            }
+
+                        </InputSelect>
+                    }
+                    else
+                    {
+                        <input class="form-control"
+                               value="@GetCurrentTeamDisplayName()"
+                               disabled />
+                    }
+
+                </div>
+
+
+                @* =============================================
+                   TITLE
+                   ============================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Meeting Title
+                    </label>
+
+
+                    <InputText class="form-control"
+                               disabled="@(!canManageMeeting)"
+                               @bind-Value="meeting.Title" />
+
+                </div>
+
+
+                @* =============================================
+                   DATE
+                   ============================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Meeting Date
+                    </label>
+
+
+                    <InputDate class="form-control"
+                               disabled="@(!canManageMeeting)"
+                               @bind-Value="meeting.MeetingDate" />
+
+                </div>
+
+
+                @* =============================================
+                   DESCRIPTION
+                   ============================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Description
+                    </label>
+
+
+                    <InputTextArea class="form-control"
+                                   rows="4"
+                                   disabled="@(!canManageMeeting)"
+                                   @bind-Value="meeting.Description" />
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        @* =====================================================
+           MEETING SEGMENTS
+           ===================================================== *@
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+
+            <h2 class="mb-0">
+                Meeting Segments
+            </h2>
+
+
+            @if (canManageMeeting)
+            {
+                <button type="button"
+                        class="btn btn-outline-primary"
+                        @onclick="AddSegment">
+
+                    Add Segment
+
+                </button>
+            }
+
+        </div>
+
+
+        @if (meeting.Segments.Count == 0)
+        {
+            <div class="alert alert-info">
+
+                This meeting does not have any segments yet.
+
+            </div>
+        }
+        else
+        {
+            @foreach (
+                MeetingSegment segment
+                in meeting.Segments
+                    .OrderBy(segment => segment.SortOrder))
+            {
+                <div class="card mb-3">
+
+                    <div class="card-header d-flex justify-content-between align-items-center">
+
+                        <strong>
+                            Segment @(segment.SortOrder + 1)
+                        </strong>
+
+
+                        @if (canManageMeeting)
+                        {
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-danger"
+                                    @onclick="() => RemoveSegment(segment)">
+
+                                Delete Segment
+
+                            </button>
+                        }
+
+                    </div>
+
+
+                    <div class="card-body">
+
+                        @* =====================================
+                           SEGMENT TITLE
+                           ===================================== *@
+
+                        <div class="mb-3">
+
+                            <label class="form-label">
+                                Segment Title
+                            </label>
+
+
+                            <InputText class="form-control"
+                                       disabled="@(!canManageMeeting)"
+                                       @bind-Value="segment.Title" />
+
+                        </div>
+
+
+                        @* =====================================
+                           SEGMENT TIMES
+                           ===================================== *@
+
+                        <div class="row">
+
+                            <div class="col-md-6 mb-3">
+
+                                <label class="form-label">
+                                    Start Time
+                                </label>
+
+
+                                @if (canManageMeeting)
+                                {
+                                    <input type="time"
+                                           class="form-control"
+                                           value="@FormatTime(segment.StartTime)"
+                                           @onchange="e => SetStartTime(segment, e.Value?.ToString())" />
+                                }
+                                else
+                                {
+                                    <input type="time"
+                                           class="form-control"
+                                           value="@FormatTime(segment.StartTime)"
+                                           disabled />
+                                }
+
+                            </div>
+
+
+                            <div class="col-md-6 mb-3">
+
+                                <label class="form-label">
+                                    End Time
+                                </label>
+
+
+                                @if (canManageMeeting)
+                                {
+                                    <input type="time"
+                                           class="form-control"
+                                           value="@FormatTime(segment.EndTime)"
+                                           @onchange="e => SetEndTime(segment, e.Value?.ToString())" />
+                                }
+                                else
+                                {
+                                    <input type="time"
+                                           class="form-control"
+                                           value="@FormatTime(segment.EndTime)"
+                                           disabled />
+                                }
+
+                            </div>
+
+                        </div>
+
+
+                        @* =====================================
+                           NOTES
+                           ===================================== *@
+
+                        <div class="mb-3">
+
+                            <label class="form-label">
+                                Notes
+                            </label>
+
+
+                            <InputTextArea class="form-control"
+                                           rows="5"
+                                           disabled="@(!canManageMeeting)"
+                                           @bind-Value="segment.Notes" />
+
+                        </div>
+
+                    </div>
+
+                </div>
+            }
+        }
+
+
+        @* =====================================================
+           MEETING SAVE / DELETE
+           ===================================================== *@
+
+        @if (canManageMeeting)
+        {
+            <div class="d-flex justify-content-between mt-4 mb-5">
+
+                <div class="d-flex gap-2">
+
+                    <button type="submit"
+                            class="btn btn-primary"
+                            disabled="@isSavingMeeting">
+
+                        @(isSavingMeeting
+                            ? "Saving..."
+                            : "Save Meeting")
+
+                    </button>
+
+
+                    <button type="button"
+                            class="btn btn-secondary"
+                            disabled="@isSavingMeeting"
+                            @onclick="BackToMeetings">
+
+                        Cancel
+
+                    </button>
+
+                </div>
+
+
+                <button type="button"
+                        class="btn btn-outline-danger"
+                        @onclick="ShowMeetingDeleteConfirmation">
+
+                    Delete Meeting
+
+                </button>
+
+            </div>
+        }
+
+    </EditForm>
+
+
+    @* =========================================================
+       DELETE MEETING CONFIRMATION
+       ========================================================= *@
+
+    @if (canManageMeeting &&
+         showMeetingDeleteConfirmation)
+    {
+        <div class="card border-danger mb-5">
+
+            <div class="card-header">
+
+                <strong>
+                    Delete Meeting
+                </strong>
+
+            </div>
+
+
+            <div class="card-body">
+
+                <p>
+                    Delete <strong>@meeting.Title</strong>?
+                </p>
+
+
+                <p class="text-danger">
+
+                    This permanently deletes the meeting,
+                    all segments, every delegated task,
+                    and all uploaded task files.
+
+                </p>
+
+
+                <div class="d-flex gap-2">
+
+                    <button type="button"
+                            class="btn btn-danger"
+                            @onclick="DeleteMeetingAsync">
+
+                        Yes, Delete Meeting
+
+                    </button>
+
+
+                    <button type="button"
+                            class="btn btn-secondary"
+                            @onclick="CancelMeetingDelete">
+
+                        Cancel
+
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+    }
+
+
+    @* =========================================================
+       TASK DELEGATION
+       ========================================================= *@
+
+    <hr class="my-5" />
+
+
+    <div class="mb-3">
+
+        <h2>
+            Delegated Tasks
+        </h2>
+
+
+        <p class="text-secondary mb-0">
+
+            Tasks are grouped by the member they are assigned to.
+            Click a task to open its full task page.
+
+        </p>
+
+    </div>
+
+
+    @* =========================================================
+       ADD MEMBER TASK TABLE
+       ========================================================= *@
+
+    @if (meeting.ProjectTeamId.HasValue &&
+         canManageMeeting)
+    {
+        <div class="card mb-4">
+
+            <div class="card-header">
+
+                <strong>
+                    Add Member Task Table
+                </strong>
+
+            </div>
+
+
+            <div class="card-body">
+
+                @if (AvailableMembersForNewTaskList.Count == 0)
+                {
+                    <p class="mb-0 text-secondary">
+
+                        Every current team member already has
+                        a task table in this meeting.
+
+                    </p>
+                }
+                else
+                {
+                    <div class="row g-2 align-items-end">
+
+                        <div class="col-md-8">
+
+                            <label class="form-label">
+                                Team Member
+                            </label>
+
+
+                            <select class="form-select"
+                                    @bind="selectedMemberForTaskList">
+
+                                <option value="">
+                                    Select a team member...
+                                </option>
+
+
+                                @foreach (
+                                    ApplicationUser member
+                                    in AvailableMembersForNewTaskList)
+                                {
+                                    <option value="@member.Id">
+
+                                        @GetDisplayName(member)
+
+                                    </option>
+                                }
+
+                            </select>
+
+                        </div>
+
+
+                        <div class="col-md-4">
+
+                            <button type="button"
+                                    class="btn btn-outline-primary w-100"
+                                    @onclick="AddTaskListAsync">
+
+                                Add Task Table
+
+                            </button>
+
+                        </div>
+
+                    </div>
+                }
+
+            </div>
+
+        </div>
+    }
+
+
+    @* =========================================================
+       MEMBER TASK TABLES
+       ========================================================= *@
+
+    @if (meeting.TaskLists.Count == 0)
+    {
+        <div class="alert alert-info">
+
+            No member task tables have been added to this
+            meeting yet.
+
+        </div>
+    }
+    else
+    {
+        @foreach (
+            MeetingTaskList taskList
+            in meeting.TaskLists
+                .OrderBy(taskList => taskList.SortOrder))
+        {
+            <div class="card mb-4">
+
+                @* =================================================
+                   TASK TABLE HEADER
+                   ================================================= *@
+
+                <div class="card-header d-flex justify-content-between align-items-center">
+
+                    <strong>
+
+                        Tasks for:
+                        @GetDisplayName(taskList.AssignedUser)
+
+                    </strong>
+
+
+                    @if (canManageMeeting)
+                    {
+                        <div class="d-flex gap-2">
+
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-primary"
+                                    @onclick="() => BeginAddTask(taskList.Id)">
+
+                                Add Task
+
+                            </button>
+
+
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-danger"
+                                    @onclick="() => ToggleTaskListDelete(taskList.Id)">
+
+                                Delete Table
+
+                            </button>
+
+                        </div>
+                    }
+
+                </div>
+
+
+                <div class="card-body">
+
+                    @* =============================================
+                       ADD TASK FORM
+                       ============================================= *@
+
+                    @if (canManageMeeting &&
+                         addingTaskListId == taskList.Id)
+                    {
+                        <div class="border rounded p-3 mb-3">
+
+                            <h5>
+                                Add Task
+                            </h5>
+
+
+                            <div class="mb-3">
+
+                                <label class="form-label">
+                                    Task Name
+                                </label>
+
+
+                                <input class="form-control"
+                                       @bind="newTaskName" />
+
+                            </div>
+
+
+                            <div class="mb-3">
+
+                                <label class="form-label">
+                                    Task Details
+                                </label>
+
+
+                                <textarea class="form-control"
+                                          rows="4"
+                                          @bind="newTaskDetails"></textarea>
+
+                            </div>
+
+
+                            <div class="mb-3">
+
+                                <label class="form-label">
+                                    File for Member (optional)
+                                </label>
+
+
+                                <InputFile class="form-control"
+                                           OnChange="HandleNewTaskAttachment" />
+
+
+                                <div class="form-text">
+
+                                    Any file type is allowed up to
+                                    @MeetingFileStorageService.FormatMaximumSize().
+
+                                </div>
+
+                            </div>
+
+
+                            <div class="d-flex gap-2">
+
+                                <button type="button"
+                                        class="btn btn-primary"
+                                        disabled="@isTaskActionRunning"
+                                        @onclick="() => AddTaskAsync(taskList.Id)">
+
+                                    Save Task
+
+                                </button>
+
+
+                                <button type="button"
+                                        class="btn btn-secondary"
+                                        disabled="@isTaskActionRunning"
+                                        @onclick="CancelAddTask">
+
+                                    Cancel
+
+                                </button>
+
+                            </div>
+
+                        </div>
+                    }
+
+
+                    @* =============================================
+                       DELETE TABLE CONFIRMATION
+                       ============================================= *@
+
+                    @if (pendingDeleteTaskListId == taskList.Id)
+                    {
+                        <div class="alert alert-danger">
+
+                            <strong>
+
+                                Delete the task table for
+                                @GetDisplayName(taskList.AssignedUser)?
+
+                            </strong>
+
+
+                            <p class="mt-2">
+
+                                This deletes every task and uploaded
+                                file in this table.
+
+                            </p>
+
+
+                            <div class="d-flex gap-2">
+
+                                <button type="button"
+                                        class="btn btn-sm btn-danger"
+                                        @onclick="() => DeleteTaskListAsync(taskList.Id)">
+
+                                    Yes, Delete Table
+
+                                </button>
+
+
+                                <button type="button"
+                                        class="btn btn-sm btn-secondary"
+                                        @onclick="CancelTaskListDelete">
+
+                                    Cancel
+
+                                </button>
+
+                            </div>
+
+                        </div>
+                    }
+
+
+                    @* =============================================
+                       TASK LIST
+                       ============================================= *@
+
+                    @if (taskList.Tasks.Count == 0)
+                    {
+                        <p class="mb-0 text-secondary">
+
+                            No tasks have been delegated to this
+                            member for this meeting.
+
+                        </p>
+                    }
+                    else
+                    {
+                        <div class="list-group meeting-task-scroll">
+
+                            @foreach (
+                                MeetingTask task
+                                in taskList.Tasks
+                                    .OrderBy(task => task.SortOrder))
+                            {
+                                <button type="button"
+                                        class="@GetTaskRowClass(task)"
+                                        @onclick="() => OpenTask(task.Id)">
+
+                                    <div class="d-flex justify-content-between align-items-center gap-3">
+
+                                        <span>
+                                            @task.Name
+                                        </span>
+
+
+                                        @if (task.SubmittedAtUtc.HasValue)
+                                        {
+                                            <span class="badge text-bg-success">
+
+                                                Submitted
+
+                                            </span>
+                                        }
+
+                                    </div>
+
+                                </button>
+                            }
+
+                        </div>
+                    }
+
+                </div>
+
+            </div>
+        }
+    }
+}
+
+
+<style>
+
+    /* =========================================================
+           SCROLLABLE TASK TABLE
+           ========================================================= */
+
+    .meeting-task-scroll {
+        max-height: 280px;
+        overflow-y: auto;
+    }
+
+
+        .meeting-task-scroll .list-group-item {
+            text-align: left;
+        }
+</style>
+
+
+@code {
+
+    // =========================================================
+    // ROUTE
+    // =========================================================
+
+    [Parameter]
+    public int Id { get; set; }
+
+
+    // =========================================================
+    // CURRENT USER
+    // =========================================================
+
+    private string? currentUserId;
+
+
+    private bool isAdmin;
+
+
+    private bool canManageMeeting;
+
+
+    // =========================================================
+    // PAGE STATE
+    // =========================================================
+
+    private bool isLoading =
+        true;
+
+
+    private bool isSavingMeeting;
+
+
+    private bool isTaskActionRunning;
+
+
+    private string? loadError;
+
+
+    private string? actionError;
+
+
+    private string? successMessage;
+
+
+    // =========================================================
+    // MEETING DELETE
+    // =========================================================
+
+    private bool showMeetingDeleteConfirmation;
+
+
+    // =========================================================
+    // DATA
+    // =========================================================
+
+    private Meeting? meeting;
+
+
+    private List<ProjectTeam> manageableTeams =
+        new();
+
+
+    private List<ApplicationUser> teamMembers =
+        new();
+
+
+    // =========================================================
+    // MEMBER TASK TABLE
+    // =========================================================
+
+    private string selectedMemberForTaskList =
+        string.Empty;
+
+
+    private int? pendingDeleteTaskListId;
+
+
+    // =========================================================
+    // ADD TASK
+    // =========================================================
+
+    private int? addingTaskListId;
+
+
+    private string newTaskName =
+        string.Empty;
+
+
+    private string newTaskDetails =
+        string.Empty;
+
+
+    private IBrowserFile? newTaskAttachment;
+
+
+    // =========================================================
+    // AVAILABLE MEMBERS
+    // =========================================================
+
+    private List<ApplicationUser> AvailableMembersForNewTaskList =>
+        teamMembers
+
+            .Where(
+                member =>
+
+                    meeting == null ||
+
+                    !meeting.TaskLists.Any(
+                        taskList =>
+                            taskList.AssignedUserId ==
+                                member.Id))
+
+            .ToList();
+
+
+    // =========================================================
+    // LOAD PAGE
+    // =========================================================
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading =
+            true;
+
+
+        loadError =
+            null;
+
+
+        try
+        {
+            AuthenticationState state =
+                await AuthenticationStateProvider
+                    .GetAuthenticationStateAsync();
+
+
+            currentUserId =
+                state.User
+
+                    .FindFirst(
+                        ClaimTypes.NameIdentifier)?
+
+                    .Value;
+
+
+            isAdmin =
+                state.User.IsInRole(
+                    AccountRoles.Admin);
+
+
+            if (string.IsNullOrWhiteSpace(
+                currentUserId))
+            {
+                loadError =
+                    "Unable to determine the currently logged-in user.";
+
+
+                return;
+            }
+
+
+            await LoadMeetingAsync();
+        }
+        catch (Exception exception)
+        {
+            loadError =
+                $"The meeting could not be loaded: {exception.Message}";
+        }
+        finally
+        {
+            isLoading =
+                false;
+        }
+    }
+
+
+    // =========================================================
+    // LOAD MEETING
+    // =========================================================
+
+    private async Task LoadMeetingAsync()
+    {
+        if (string.IsNullOrWhiteSpace(
+            currentUserId))
+        {
+            return;
+        }
+
+
+        meeting =
+            await MeetingService
+                .GetMeetingAsync(
+                    Id,
+                    currentUserId,
+                    isAdmin);
+
+
+        if (meeting == null)
+        {
+            loadError =
+                "This meeting does not exist or you do not have permission to view it.";
+
+
+            return;
+        }
+
+
+        meeting.Segments =
+            meeting.Segments
+
+                .OrderBy(
+                    segment =>
+                        segment.SortOrder)
+
+                .ToList();
+
+
+        meeting.TaskLists =
+            meeting.TaskLists
+
+                .OrderBy(
+                    taskList =>
+                        taskList.SortOrder)
+
+                .ToList();
+
+
+        foreach (
+            MeetingTaskList taskList
+            in meeting.TaskLists)
+        {
+            taskList.Tasks =
+                taskList.Tasks
+
+                    .OrderBy(
+                        task =>
+                            task.SortOrder)
+
+                    .ToList();
+        }
+
+
+        canManageMeeting =
+            await MeetingService
+                .CanManageMeetingAsync(
+                    meeting.Id,
+                    currentUserId,
+                    isAdmin);
+
+
+        manageableTeams =
+            canManageMeeting
+
+                ? await MeetingService
+                    .GetManageableTeamsAsync(
+                        currentUserId,
+                        isAdmin)
+
+                : new List<ProjectTeam>();
+
+
+        teamMembers =
+            meeting.ProjectTeamId.HasValue
+
+                ? await MeetingService
+                    .GetTeamMembersAsync(
+                        meeting.ProjectTeamId.Value)
+
+                : new List<ApplicationUser>();
+
+
+        selectedMemberForTaskList =
+            string.Empty;
+    }
+
+
+    // =========================================================
+    // SEGMENTS
+    // =========================================================
+
+    private void AddSegment()
+    {
+        if (!canManageMeeting ||
+            meeting == null)
+        {
+            return;
+        }
+
+
+        TimeSpan startTime =
+            meeting.Segments.Count == 0
+
+                ? new TimeSpan(
+                    9,
+                    0,
+                    0)
+
+                : meeting.Segments
+
+                    .OrderBy(
+                        segment =>
+                            segment.SortOrder)
+
+                    .Last()
+                    .EndTime;
+
+
+        meeting.Segments.Add(
+            new MeetingSegment
+            {
+                Title =
+                    "New Segment",
+
+                StartTime =
+                    startTime,
+
+                EndTime =
+                    startTime.Add(
+                        TimeSpan.FromMinutes(
+                            30)),
+
+                SortOrder =
+                    meeting.Segments.Count,
+
+                Notes =
+                    string.Empty
+            });
+    }
+
+
+    private void RemoveSegment(
+        MeetingSegment segment)
+    {
+        if (!canManageMeeting ||
+            meeting == null)
+        {
+            return;
+        }
+
+
+        meeting.Segments.Remove(
+            segment);
+
+
+        for (
+            int index = 0;
+            index < meeting.Segments.Count;
+            index++)
+        {
+            meeting.Segments[index].SortOrder =
+                index;
+        }
+    }
+
+
+    private static string FormatTime(
+        TimeSpan time)
+    {
+        return time.ToString(
+            @"hh\:mm");
+    }
+
+
+    private void SetStartTime(
+        MeetingSegment segment,
+        string? value)
+    {
+        if (canManageMeeting &&
+            TimeSpan.TryParse(
+                value,
+                out TimeSpan parsed))
+        {
+            segment.StartTime =
+                parsed;
+        }
+    }
+
+
+    private void SetEndTime(
+        MeetingSegment segment,
+        string? value)
+    {
+        if (canManageMeeting &&
+            TimeSpan.TryParse(
+                value,
+                out TimeSpan parsed))
+        {
+            segment.EndTime =
+                parsed;
+        }
+    }
+
+
+    // =========================================================
+    // SAVE MEETING
+    // =========================================================
+
+    private async Task SaveMeetingAsync()
+    {
+        if (!canManageMeeting ||
+            meeting == null ||
+            string.IsNullOrWhiteSpace(
+                currentUserId) ||
+            isSavingMeeting)
+        {
+            return;
+        }
+
+
+        ClearMessages();
+
+
+        if (!meeting.ProjectTeamId.HasValue)
+        {
+            actionError =
+                "Select a project team or subsystem.";
+
+
+            return;
+        }
+
+
+        isSavingMeeting =
+            true;
+
+
+        try
+        {
+            await MeetingService
+                .UpdateMeetingAsync(
+                    meeting,
+                    currentUserId,
+                    isAdmin);
+
+
+            successMessage =
+                "Meeting saved successfully.";
+
+
+            await LoadMeetingAsync();
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                exception.Message;
+        }
+        finally
+        {
+            isSavingMeeting =
+                false;
+        }
+    }
+
+
+    // =========================================================
+    // DELETE MEETING
+    // =========================================================
+
+    private void ShowMeetingDeleteConfirmation()
+    {
+        showMeetingDeleteConfirmation =
+            true;
+    }
+
+
+    private void CancelMeetingDelete()
+    {
+        showMeetingDeleteConfirmation =
+            false;
+    }
+
+
+    private async Task DeleteMeetingAsync()
+    {
+        if (!canManageMeeting ||
+            meeting == null ||
+            string.IsNullOrWhiteSpace(
+                currentUserId))
+        {
+            return;
+        }
+
+
+        try
+        {
+            await MeetingService
+                .DeleteMeetingAsync(
+                    meeting.Id,
+                    currentUserId,
+                    isAdmin);
+
+
+            Navigation.NavigateTo(
+                "/meetings");
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                exception.Message;
+
+
+            showMeetingDeleteConfirmation =
+                false;
+        }
+    }
+
+
+    // =========================================================
+    // ADD TASK TABLE
+    // =========================================================
+
+    private async Task AddTaskListAsync()
+    {
+        if (!canManageMeeting ||
+            meeting == null ||
+            string.IsNullOrWhiteSpace(
+                currentUserId))
+        {
+            return;
+        }
+
+
+        ClearMessages();
+
+
+        if (string.IsNullOrWhiteSpace(
+            selectedMemberForTaskList))
+        {
+            actionError =
+                "Select a team member.";
+
+
+            return;
+        }
+
+
+        try
+        {
+            await MeetingService
+                .AddTaskListAsync(
+                    meeting.Id,
+                    selectedMemberForTaskList,
+                    currentUserId,
+                    isAdmin);
+
+
+            successMessage =
+                "The member task table was added.";
+
+
+            await LoadMeetingAsync();
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                exception.Message;
+        }
+    }
+
+
+    // =========================================================
+    // DELETE TASK TABLE
+    // =========================================================
+
+    private void ToggleTaskListDelete(
+        int taskListId)
+    {
+        pendingDeleteTaskListId =
+            pendingDeleteTaskListId ==
+                taskListId
+
+                ? null
+
+                : taskListId;
+    }
+
+
+    private void CancelTaskListDelete()
+    {
+        pendingDeleteTaskListId =
+            null;
+    }
+
+
+    private async Task DeleteTaskListAsync(
+        int taskListId)
+    {
+        if (!canManageMeeting ||
+            string.IsNullOrWhiteSpace(
+                currentUserId))
+        {
+            return;
+        }
+
+
+        ClearMessages();
+
+
+        try
+        {
+            await MeetingService
+                .DeleteTaskListAsync(
+                    taskListId,
+                    currentUserId,
+                    isAdmin);
+
+
+            pendingDeleteTaskListId =
+                null;
+
+
+            successMessage =
+                "The member task table was deleted.";
+
+
+            await LoadMeetingAsync();
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                exception.Message;
+        }
+    }
+
+
+    // =========================================================
+    // ADD TASK
+    // =========================================================
+
+    private void BeginAddTask(
+        int taskListId)
+    {
+        addingTaskListId =
+            taskListId;
+
+
+        newTaskName =
+            string.Empty;
+
+
+        newTaskDetails =
+            string.Empty;
+
+
+        newTaskAttachment =
+            null;
+    }
+
+
+    private void CancelAddTask()
+    {
+        addingTaskListId =
+            null;
+
+
+        newTaskName =
+            string.Empty;
+
+
+        newTaskDetails =
+            string.Empty;
+
+
+        newTaskAttachment =
+            null;
+    }
+
+
+    private void HandleNewTaskAttachment(
+        InputFileChangeEventArgs args)
+    {
+        newTaskAttachment =
+            args.File;
+    }
+
+
+    private async Task AddTaskAsync(
+        int taskListId)
+    {
+        if (!canManageMeeting ||
+            string.IsNullOrWhiteSpace(
+                currentUserId) ||
+            isTaskActionRunning)
+        {
+            return;
+        }
+
+
+        ClearMessages();
+
+
+        isTaskActionRunning =
+            true;
+
+
+        try
+        {
+            await MeetingService
+                .AddTaskAsync(
+                    taskListId,
+                    newTaskName,
+                    newTaskDetails,
+                    newTaskAttachment,
+                    currentUserId,
+                    isAdmin);
+
+
+            CancelAddTask();
+
+
+            successMessage =
+                "The task was added.";
+
+
+            await LoadMeetingAsync();
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                exception.Message;
+        }
+        finally
+        {
+            isTaskActionRunning =
+                false;
+        }
+    }
+
+
+    // =========================================================
+    // OPEN TASK PAGE
+    // =========================================================
+
+    private void OpenTask(
+        int taskId)
+    {
+        Navigation.NavigateTo(
+            $"/meetings/{Id}/tasks/{taskId}");
+    }
+
+
+    // =========================================================
+    // DISPLAY HELPERS
+    // =========================================================
+
+    private static string GetDisplayName(
+        ApplicationUser? user)
+    {
+        if (user == null)
+        {
+            return "Unknown User";
+        }
+
+
+        string fullName =
+            $"{user.FirstName} {user.LastName}"
+                .Trim();
+
+
+        if (!string.IsNullOrWhiteSpace(
+            fullName))
+        {
+            return fullName;
+        }
+
+
+        return user.Email ??
+            "Unknown User";
+    }
+
+
+    private static string GetTeamDisplayName(
+        ProjectTeam team)
+    {
+        return team.Project == null
+
+            ? team.Name
+
+            : $"{team.Project.Name} - {team.Name}";
+    }
+
+
+    private string GetCurrentTeamDisplayName()
+    {
+        return meeting?.Team == null
+
+            ? "Unassigned"
+
+            : GetTeamDisplayName(
+                meeting.Team);
+    }
+
+
+    // =========================================================
+    // TASK ROW STYLE
+    // =========================================================
+
+    private static string GetTaskRowClass(
+        MeetingTask task)
+    {
+        string classes =
+            "list-group-item list-group-item-action";
+
+
+        if (task.SubmittedAtUtc.HasValue)
+        {
+            classes +=
+                " list-group-item-success";
+        }
+
+
+        return classes;
+    }
+
+
+    // =========================================================
+    // MESSAGE HELPERS
+    // =========================================================
+
+    private void ClearMessages()
+    {
+        successMessage =
+            null;
+
+
+        actionError =
+            null;
+    }
+
+
+    // =========================================================
+    // BACK TO MEETINGS
+    // =========================================================
+
+    private void BackToMeetings()
+    {
+        Navigation.NavigateTo(
+            "/meetings");
+    }
+}

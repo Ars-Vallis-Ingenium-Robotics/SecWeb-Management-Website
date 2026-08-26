@@ -1,0 +1,281 @@
+@page "/Account/Manage"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using SecWeb.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Profile</PageTitle>
+
+<h3>Profile</h3>
+
+<StatusMessage />
+
+<div class="row">
+    <div class="col-xl-6">
+
+        <EditForm Model="Input"
+                  FormName="profile"
+                  OnValidSubmit="OnValidSubmitAsync"
+                  method="post">
+
+            <DataAnnotationsValidator />
+
+            <ValidationSummary class="text-danger"
+                               role="alert" />
+
+
+            @* -------------------------------------------------
+               EMAIL
+               ------------------------------------------------- *@
+
+            <div class="form-floating mb-3">
+
+                <input type="email"
+                       value="@email"
+                       id="email"
+                       class="form-control"
+                       placeholder="Email"
+                       disabled />
+
+                <label for="email"
+                       class="form-label">
+                    Email
+                </label>
+
+            </div>
+
+
+            @* -------------------------------------------------
+               FIRST NAME
+               ------------------------------------------------- *@
+
+            <div class="form-floating mb-3">
+
+                <InputText @bind-Value="Input.FirstName"
+                           id="Input.FirstName"
+                           class="form-control"
+                           autocomplete="given-name"
+                           placeholder="First name"
+                           aria-required="true" />
+
+                <label for="Input.FirstName"
+                       class="form-label">
+                    First Name
+                </label>
+
+                <ValidationMessage For="() => Input.FirstName"
+                                   class="text-danger" />
+
+            </div>
+
+
+            @* -------------------------------------------------
+               LAST NAME
+               ------------------------------------------------- *@
+
+            <div class="form-floating mb-3">
+
+                <InputText @bind-Value="Input.LastName"
+                           id="Input.LastName"
+                           class="form-control"
+                           autocomplete="family-name"
+                           placeholder="Last name"
+                           aria-required="true" />
+
+                <label for="Input.LastName"
+                       class="form-label">
+                    Last Name
+                </label>
+
+                <ValidationMessage For="() => Input.LastName"
+                                   class="text-danger" />
+
+            </div>
+
+
+            <button type="submit"
+                    class="w-100 btn btn-lg btn-primary">
+
+                Save
+
+            </button>
+
+        </EditForm>
+
+    </div>
+</div>
+
+
+@code {
+
+    private ApplicationUser? user;
+
+    private string? email;
+
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; }
+
+
+    public Index()
+    {
+        Input = new();
+    }
+
+
+    // ---------------------------------------------------------
+    // LOAD PROFILE
+    // ---------------------------------------------------------
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        user =
+            await UserManager.GetUserAsync(
+                HttpContext.User);
+
+
+        if (user is null)
+        {
+            RedirectManager.RedirectToInvalidUser(
+                UserManager,
+                HttpContext);
+
+            return;
+        }
+
+
+        email =
+            await UserManager.GetEmailAsync(user);
+
+
+        // IMPORTANT:
+        //
+        // Only copy database values into the form when the page
+        // is initially opened with a GET request.
+        //
+        // On a POST, Input already contains what the user typed.
+        // Overwriting it here would erase the submitted names.
+
+        if (HttpMethods.IsGet(
+            HttpContext.Request.Method))
+        {
+            Input.FirstName =
+                user.FirstName;
+
+            Input.LastName =
+                user.LastName;
+        }
+    }
+
+
+    // ---------------------------------------------------------
+    // SAVE PROFILE
+    // ---------------------------------------------------------
+
+    private async Task OnValidSubmitAsync()
+    {
+        if (user is null)
+        {
+            RedirectManager.RedirectToInvalidUser(
+                UserManager,
+                HttpContext);
+
+            return;
+        }
+
+
+        string firstName =
+            Input.FirstName.Trim();
+
+        string lastName =
+            Input.LastName.Trim();
+
+
+        bool changed = false;
+
+
+        if (user.FirstName != firstName)
+        {
+            user.FirstName =
+                firstName;
+
+            changed = true;
+        }
+
+
+        if (user.LastName != lastName)
+        {
+            user.LastName =
+                lastName;
+
+            changed = true;
+        }
+
+
+        if (changed)
+        {
+            IdentityResult result =
+                await UserManager.UpdateAsync(user);
+
+
+            if (!result.Succeeded)
+            {
+                string errorMessage =
+                    string.Join(
+                        " ",
+                        result.Errors.Select(
+                            error => error.Description));
+
+
+                RedirectManager
+                    .RedirectToCurrentPageWithStatus(
+                        $"Error: {errorMessage}",
+                        HttpContext);
+
+                return;
+            }
+
+
+            await SignInManager.RefreshSignInAsync(user);
+        }
+
+
+        RedirectManager.RedirectToCurrentPageWithStatus(
+            "Your profile has been updated.",
+            HttpContext);
+    }
+
+
+    // ---------------------------------------------------------
+    // INPUT MODEL
+    // ---------------------------------------------------------
+
+    private sealed class InputModel
+    {
+        [Required]
+        [StringLength(
+            100,
+            ErrorMessage =
+                "First name cannot be longer than 100 characters.")]
+        [Display(Name = "First name")]
+        public string FirstName { get; set; } = "";
+
+
+        [Required]
+        [StringLength(
+            100,
+            ErrorMessage =
+                "Last name cannot be longer than 100 characters.")]
+        [Display(Name = "Last name")]
+        public string LastName { get; set; } = "";
+    }
+}

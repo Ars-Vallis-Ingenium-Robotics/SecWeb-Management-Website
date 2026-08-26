@@ -1,0 +1,147 @@
+﻿@* =============================================================
+   SECWEB COOKIE CONSENT BANNER
+   =============================================================
+
+   The user's acceptance is remembered in:
+
+   1. localStorage
+   2. A persistent browser cookie
+
+   Once accepted, JavaScript adds the class:
+
+   secweb-cookie-consent-accepted
+
+   to the <html> element.
+
+   CSS then permanently hides this banner for that browser
+   until its site data is manually cleared.
+   ============================================================= *@
+
+
+<div id="secweb-cookie-consent"
+     class="secweb-cookie-banner">
+
+    <div class="secweb-cookie-content">
+
+        <div class="secweb-cookie-text">
+
+            <strong>
+                SecWeb uses cookies
+            </strong>
+
+            <div>
+                SecWeb uses cookies for login, security,
+                account preferences, and Discord account linking.
+            </div>
+
+        </div>
+
+
+        <div class="secweb-cookie-actions">
+
+            <button type="button"
+                    class="btn btn-primary"
+                    onclick="acceptSecWebCookies()">
+
+                Accept Cookies
+
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<style>
+
+    /* =========================================================
+           HIDE BANNER AFTER ACCEPTANCE
+           ========================================================= */
+
+    html.secweb-cookie-consent-accepted
+    #secweb-cookie-consent {
+        display: none !important;
+    }
+
+
+    /* =========================================================
+           COOKIE BANNER
+           ========================================================= */
+
+    .secweb-cookie-banner {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 9999;
+        padding: 1rem;
+        background: white;
+        border-top: 1px solid #d6d6d6;
+        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
+    }
+
+
+    /* =========================================================
+           BANNER CONTENT
+           ========================================================= */
+
+    .secweb-cookie-content {
+        max-width: 1200px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+
+    /* =========================================================
+           TEXT
+           ========================================================= */
+
+    .secweb-cookie-text {
+        flex: 1;
+    }
+
+
+        .secweb-cookie-text strong {
+            display: block;
+            margin-bottom: 0.25rem;
+            font-size: 1.05rem;
+        }
+
+
+    /* =========================================================
+           BUTTON
+           ========================================================= */
+
+    .secweb-cookie-actions {
+        flex-shrink: 0;
+    }
+
+
+    /* =========================================================
+           MOBILE
+           ========================================================= */
+
+    @@media (max-width: 700px) {
+
+        .secweb-cookie-content {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+
+        .secweb-cookie-actions {
+            width: 100%;
+        }
+
+
+            .secweb-cookie-actions .btn {
+                width: 100%;
+            }
+    }
+
+</style>

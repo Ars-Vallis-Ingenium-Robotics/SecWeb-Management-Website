@@ -1,0 +1,864 @@
+﻿@page "/"
+
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using SecWeb.Data
+@using SecWeb.Data.Models
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ApplicationDbContext Db
+
+<PageTitle>Dashboard</PageTitle>
+
+
+@if (isLoading)
+{
+    <p>
+        <em>Loading dashboard...</em>
+    </p>
+}
+else if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="alert alert-danger">
+        @errorMessage
+    </div>
+}
+else if (!isAuthenticated)
+{
+    <h1>
+        SecWeb
+    </h1>
+
+    <p>
+        Sign in to view your assigned tasks,
+        recent work hours, meetings, and projects.
+    </p>
+
+    <a class="btn btn-primary"
+       href="/Account/Login">
+
+        Login
+
+    </a>
+}
+else
+{
+    @* =========================================================
+       WELCOME
+       ========================================================= *@
+
+    <div class="mb-4">
+
+        <h1>
+            Welcome, @displayName!
+        </h1>
+
+        <p class="text-secondary mb-0">
+            Here is your current AVI Robotics activity.
+        </p>
+
+    </div>
+
+
+    @* =========================================================
+       ASSIGNED TASKS
+       ========================================================= *@
+
+    <div class="card mb-4">
+
+        <div class="card-header d-flex justify-content-between align-items-center">
+
+            <strong>
+                My Assigned Tasks
+            </strong>
+
+
+            <span class="badge text-bg-secondary">
+
+                @assignedTasks.Count
+
+                @if (assignedTasks.Count == 1)
+                {
+                    <span>task</span>
+                }
+                else
+                {
+                    <span>tasks</span>
+                }
+
+            </span>
+
+        </div>
+
+
+        <div class="card-body">
+
+            @if (assignedTasks.Count == 0)
+            {
+                <div class="alert alert-success mb-0">
+
+                    You do not currently have any outstanding
+                    assigned tasks.
+
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+
+                    <table class="table table-striped table-hover align-middle mb-0">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>
+                                    Task
+                                </th>
+
+                                <th>
+                                    Project
+                                </th>
+
+                                <th>
+                                    Team / Subsystem
+                                </th>
+
+                                <th>
+                                    Meeting
+                                </th>
+
+                                <th>
+                                    Meeting Date
+                                </th>
+
+                                <th>
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            @foreach (
+                                DashboardTaskItem task
+                                in assignedTasks)
+                            {
+                                <tr>
+
+                                    @* =================================
+                                       TASK
+                                       ================================= *@
+
+                                    <td>
+
+                                        <strong>
+                                            @task.TaskName
+                                        </strong>
+
+                                    </td>
+
+
+                                    @* =================================
+                                       PROJECT
+                                       ================================= *@
+
+                                    <td>
+
+                                        @if (!string.IsNullOrWhiteSpace(
+                                            task.ProjectName))
+                                        {
+                                            @task.ProjectName
+                                        }
+                                        else
+                                        {
+                                            <span class="text-secondary">
+                                                Unassigned
+                                            </span>
+                                        }
+
+                                    </td>
+
+
+                                    @* =================================
+                                       TEAM
+                                       ================================= *@
+
+                                    <td>
+
+                                        @if (!string.IsNullOrWhiteSpace(
+                                            task.TeamName))
+                                        {
+                                            @task.TeamName
+                                        }
+                                        else
+                                        {
+                                            <span class="text-secondary">
+                                                Unassigned
+                                            </span>
+                                        }
+
+                                    </td>
+
+
+                                    @* =================================
+                                       MEETING
+                                       ================================= *@
+
+                                    <td>
+                                        @task.MeetingTitle
+                                    </td>
+
+
+                                    @* =================================
+                                       MEETING DATE
+                                       ================================= *@
+
+                                    <td>
+
+                                        @(task.MeetingDate.ToString(
+                                            "MMM d, yyyy"))
+
+                                    </td>
+
+
+                                    @* =================================
+                                       OPEN TASK
+                                       ================================= *@
+
+                                    <td class="text-end">
+
+                                        <a class="btn btn-sm btn-outline-primary"
+                                           href="@GetTaskUrl(task)">
+
+                                            Open Task
+
+                                        </a>
+
+                                    </td>
+
+                                </tr>
+                            }
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+            }
+
+        </div>
+
+    </div>
+
+
+    @* =========================================================
+       RECENT TIME ENTRIES
+       ========================================================= *@
+
+    <div class="card mb-4">
+
+        <div class="card-header d-flex justify-content-between align-items-center">
+
+            <strong>
+                My 5 Most Recent Time Entries
+            </strong>
+
+
+            <a class="btn btn-sm btn-outline-primary"
+               href="/time">
+
+                View All Time
+
+            </a>
+
+        </div>
+
+
+        <div class="card-body">
+
+            @if (recentTimeLogs.Count == 0)
+            {
+                <p class="mb-0 text-secondary">
+
+                    You have not recorded any time yet.
+
+                </p>
+            }
+            else
+            {
+                <div class="table-responsive">
+
+                    <table class="table table-striped align-middle mb-0">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>
+                                    Project
+                                </th>
+
+                                <th>
+                                    Activity
+                                </th>
+
+                                <th>
+                                    Started
+                                </th>
+
+                                <th>
+                                    Ended
+                                </th>
+
+                                <th>
+                                    Duration
+                                </th>
+
+                                <th>
+                                    Source
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            @foreach (
+                                WorkLog log
+                                in recentTimeLogs)
+                            {
+                                <tr>
+
+                                    @* =================================
+                                       PROJECT
+                                       ================================= *@
+
+                                    <td>
+                                        @log.ProjectNameSnapshot
+                                    </td>
+
+
+                                    @* =================================
+                                       ACTIVITY
+                                       ================================= *@
+
+                                    <td>
+                                        @log.Activity
+                                    </td>
+
+
+                                    @* =================================
+                                       STARTED
+                                       ================================= *@
+
+                                    <td>
+
+                                        @FormatDateTime(
+                                            log.StartedAtUtc)
+
+                                    </td>
+
+
+                                    @* =================================
+                                       ENDED
+                                       ================================= *@
+
+                                    <td>
+
+                                        @if (log.EndedAtUtc.HasValue)
+                                        {
+                                            @FormatDateTime(
+                                                log.EndedAtUtc.Value)
+                                        }
+                                        else
+                                        {
+                                            <span class="badge text-bg-success">
+                                                In Progress
+                                            </span>
+                                        }
+
+                                    </td>
+
+
+                                    @* =================================
+                                       DURATION
+                                       ================================= *@
+
+                                    <td>
+
+                                        @FormatDuration(
+                                            GetDuration(log))
+
+                                    </td>
+
+
+                                    @* =================================
+                                       SOURCE
+                                       ================================= *@
+
+                                    <td>
+                                        @log.Source
+                                    </td>
+
+                                </tr>
+                            }
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+            }
+
+        </div>
+
+    </div>
+}
+
+
+@code {
+
+    // =========================================================
+    // AUTHENTICATION
+    // =========================================================
+
+    private bool isAuthenticated;
+
+
+    private string? currentUserId;
+
+
+    // =========================================================
+    // USER
+    // =========================================================
+
+    private string displayName =
+        "User";
+
+
+    // =========================================================
+    // ASSIGNED TASKS
+    // =========================================================
+
+    private List<DashboardTaskItem> assignedTasks =
+        new();
+
+
+    // =========================================================
+    // RECENT TIME
+    // =========================================================
+
+    private List<WorkLog> recentTimeLogs =
+        new();
+
+
+    // =========================================================
+    // PAGE STATE
+    // =========================================================
+
+    private bool isLoading =
+        true;
+
+
+    private string? errorMessage;
+
+
+    // =========================================================
+    // LOAD DASHBOARD
+    // =========================================================
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading =
+            true;
+
+
+        errorMessage =
+            null;
+
+
+        try
+        {
+            // -----------------------------------------------------
+            // CURRENT LOGIN
+            // -----------------------------------------------------
+
+            AuthenticationState authenticationState =
+                await AuthenticationStateProvider
+                    .GetAuthenticationStateAsync();
+
+
+            ClaimsPrincipal principal =
+                authenticationState.User;
+
+
+            isAuthenticated =
+                principal.Identity?
+                    .IsAuthenticated ==
+                true;
+
+
+            // -----------------------------------------------------
+            // LOGGED OUT
+            // -----------------------------------------------------
+
+            if (!isAuthenticated)
+            {
+                return;
+            }
+
+
+            // -----------------------------------------------------
+            // CURRENT USER
+            // -----------------------------------------------------
+
+            currentUserId =
+                principal
+                    .FindFirst(
+                        ClaimTypes.NameIdentifier)?
+                    .Value;
+
+
+            if (string.IsNullOrWhiteSpace(
+                currentUserId))
+            {
+                errorMessage =
+                    "Unable to determine the currently logged-in user.";
+
+
+                return;
+            }
+
+
+            // -----------------------------------------------------
+            // LOAD ACCOUNT
+            // -----------------------------------------------------
+
+            ApplicationUser? currentUser =
+                await Db.Users
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(
+                        user =>
+                            user.Id ==
+                            currentUserId);
+
+
+            if (currentUser == null)
+            {
+                errorMessage =
+                    "Your SecWeb account could not be found.";
+
+
+                return;
+            }
+
+
+            displayName =
+                GetWelcomeName(
+                    currentUser);
+
+
+            // -----------------------------------------------------
+            // DASHBOARD CONTENT
+            // -----------------------------------------------------
+
+            await LoadAssignedTasksAsync();
+
+
+            await LoadRecentTimesAsync();
+        }
+        catch (Exception exception)
+        {
+            errorMessage =
+                $"The dashboard could not be loaded: {exception.Message}";
+        }
+        finally
+        {
+            isLoading =
+                false;
+        }
+    }
+
+
+    // =========================================================
+    // LOAD ASSIGNED TASKS
+    // =========================================================
+
+    private async Task LoadAssignedTasksAsync()
+    {
+        if (string.IsNullOrWhiteSpace(
+            currentUserId))
+        {
+            return;
+        }
+
+
+        List<MeetingTaskList> taskLists =
+            await Db.MeetingTaskLists
+                .AsNoTracking()
+
+                .Where(
+                    taskList =>
+                        taskList.AssignedUserId ==
+                        currentUserId)
+
+                .Include(
+                    taskList =>
+                        taskList.Tasks)
+
+                .Include(
+                    taskList =>
+                        taskList.Meeting)
+
+                    .ThenInclude(
+                        meeting =>
+                            meeting!.Team)
+
+                        .ThenInclude(
+                            team =>
+                                team!.Project)
+
+                .ToListAsync();
+
+
+        assignedTasks =
+            taskLists
+
+                .SelectMany(
+                    taskList =>
+
+                        taskList.Tasks
+
+                            // -----------------------------------------
+                            // SUBMITTED TASKS DO NOT APPEAR
+                            // -----------------------------------------
+
+                            .Where(
+                                task =>
+                                    !task.SubmittedAtUtc.HasValue)
+
+                            .Select(
+                                task =>
+                                    new DashboardTaskItem
+                                    {
+                                        TaskId =
+                                            task.Id,
+
+                                        MeetingId =
+                                            taskList.MeetingId,
+
+                                        TaskName =
+                                            task.Name,
+
+                                        MeetingTitle =
+                                            taskList.Meeting?
+                                                .Title
+                                            ?? "Unknown Meeting",
+
+                                        MeetingDate =
+                                            taskList.Meeting?
+                                                .MeetingDate
+                                            ?? DateTime.MinValue,
+
+                                        TeamName =
+                                            taskList.Meeting?
+                                                .Team?
+                                                .Name,
+
+                                        ProjectName =
+                                            taskList.Meeting?
+                                                .Team?
+                                                .Project?
+                                                .Name,
+
+                                        CreatedAtUtc =
+                                            task.CreatedAtUtc
+                                    }))
+
+                .OrderByDescending(
+                    task =>
+                        task.CreatedAtUtc)
+
+                .ThenBy(
+                    task =>
+                        task.TaskName)
+
+                .ToList();
+    }
+
+
+    // =========================================================
+    // LOAD RECENT TIMES
+    // =========================================================
+
+    private async Task LoadRecentTimesAsync()
+    {
+        if (string.IsNullOrWhiteSpace(
+            currentUserId))
+        {
+            return;
+        }
+
+
+        recentTimeLogs =
+            await Db.WorkLogs
+                .AsNoTracking()
+
+                .Where(
+                    log =>
+                        log.UserId ==
+                        currentUserId)
+
+                .OrderByDescending(
+                    log =>
+                        log.StartedAtUtc)
+
+                .Take(5)
+
+                .ToListAsync();
+    }
+
+
+    // =========================================================
+    // WELCOME NAME
+    // =========================================================
+
+    private static string GetWelcomeName(
+        ApplicationUser user)
+    {
+        string fullName =
+            $"{user.FirstName} {user.LastName}"
+                .Trim();
+
+
+        if (!string.IsNullOrWhiteSpace(
+            fullName))
+        {
+            return fullName;
+        }
+
+
+        if (!string.IsNullOrWhiteSpace(
+            user.Email))
+        {
+            return user.Email;
+        }
+
+
+        return "User";
+    }
+
+
+    // =========================================================
+    // TASK URL
+    // =========================================================
+
+    private static string GetTaskUrl(
+        DashboardTaskItem task)
+    {
+        return
+            $"/meetings/{task.MeetingId}/tasks/{task.TaskId}";
+    }
+
+
+    // =========================================================
+    // DATE / TIME
+    // =========================================================
+
+    private static string FormatDateTime(
+        DateTimeOffset time)
+    {
+        return time
+            .ToLocalTime()
+            .ToString(
+                "MMM d, yyyy h:mm tt");
+    }
+
+
+    // =========================================================
+    // DURATION
+    // =========================================================
+
+    private static TimeSpan GetDuration(
+        WorkLog log)
+    {
+        DateTimeOffset end =
+            log.EndedAtUtc ??
+            DateTimeOffset.UtcNow;
+
+
+        TimeSpan duration =
+            end -
+            log.StartedAtUtc;
+
+
+        if (duration <
+            TimeSpan.Zero)
+        {
+            return TimeSpan.Zero;
+        }
+
+
+        return duration;
+    }
+
+
+    private static string FormatDuration(
+        TimeSpan duration)
+    {
+        if (duration <
+            TimeSpan.Zero)
+        {
+            duration =
+                TimeSpan.Zero;
+        }
+
+
+        int hours =
+            (int)Math.Floor(
+                duration.TotalHours);
+
+
+        return
+            $"{hours}h {duration.Minutes:D2}m";
+    }
+
+
+    // =========================================================
+    // DASHBOARD TASK ITEM
+    // =========================================================
+
+    private sealed class DashboardTaskItem
+    {
+        public int TaskId { get; set; }
+
+
+        public int MeetingId { get; set; }
+
+
+        public string TaskName { get; set; } =
+            string.Empty;
+
+
+        public string MeetingTitle { get; set; } =
+            string.Empty;
+
+
+        public DateTime MeetingDate { get; set; }
+
+
+        public string? ProjectName { get; set; }
+
+
+        public string? TeamName { get; set; }
+
+
+        public DateTimeOffset CreatedAtUtc { get; set; }
+    }
+}

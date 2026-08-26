@@ -1,0 +1,386 @@
+﻿@page "/Account/Register"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using SecWeb.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IUserStore<ApplicationUser> UserStore
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IEmailSender<ApplicationUser> EmailSender
+@inject ILogger<Register> Logger
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Register</PageTitle>
+
+<h1>Register</h1>
+
+<div class="row">
+    <div class="col-lg-6">
+
+        <StatusMessage Message="@Message" />
+
+        <EditForm Model="Input"
+                  method="post"
+                  OnValidSubmit="RegisterUser"
+                  FormName="register">
+
+            <DataAnnotationsValidator />
+
+            <h2>Create a SecWeb member account.</h2>
+
+            <hr />
+
+            <p class="text-secondary">
+                Public registration creates a Member account.
+            </p>
+
+            <ValidationSummary class="text-danger"
+                               role="alert" />
+
+
+            <div class="form-floating mb-3">
+
+                <InputText @bind-Value="Input.FirstName"
+                           id="Input.FirstName"
+                           class="form-control"
+                           autocomplete="given-name"
+                           aria-required="true"
+                           placeholder="First name" />
+
+                <label for="Input.FirstName">
+                    First Name
+                </label>
+
+                <ValidationMessage For="() => Input.FirstName"
+                                   class="text-danger" />
+
+            </div>
+
+
+            <div class="form-floating mb-3">
+
+                <InputText @bind-Value="Input.LastName"
+                           id="Input.LastName"
+                           class="form-control"
+                           autocomplete="family-name"
+                           aria-required="true"
+                           placeholder="Last name" />
+
+                <label for="Input.LastName">
+                    Last Name
+                </label>
+
+                <ValidationMessage For="() => Input.LastName"
+                                   class="text-danger" />
+
+            </div>
+
+
+            <div class="form-floating mb-3">
+
+                <InputText @bind-Value="Input.Email"
+                           id="Input.Email"
+                           class="form-control"
+                           autocomplete="username"
+                           aria-required="true"
+                           placeholder="name@example.com" />
+
+                <label for="Input.Email">
+                    Email
+                </label>
+
+                <ValidationMessage For="() => Input.Email"
+                                   class="text-danger" />
+
+            </div>
+
+
+            <div class="form-floating mb-3">
+
+                <InputText type="password"
+                           @bind-Value="Input.Password"
+                           id="Input.Password"
+                           class="form-control"
+                           autocomplete="new-password"
+                           aria-required="true"
+                           placeholder="password" />
+
+                <label for="Input.Password">
+                    Password
+                </label>
+
+                <ValidationMessage For="() => Input.Password"
+                                   class="text-danger" />
+
+            </div>
+
+
+            <div class="form-floating mb-3">
+
+                <InputText type="password"
+                           @bind-Value="Input.ConfirmPassword"
+                           id="Input.ConfirmPassword"
+                           class="form-control"
+                           autocomplete="new-password"
+                           aria-required="true"
+                           placeholder="password" />
+
+                <label for="Input.ConfirmPassword">
+                    Confirm Password
+                </label>
+
+                <ValidationMessage For="() => Input.ConfirmPassword"
+                                   class="text-danger" />
+
+            </div>
+
+
+            <button type="submit"
+                    class="w-100 btn btn-lg btn-primary">
+
+                Register
+
+            </button>
+
+        </EditForm>
+
+    </div>
+</div>
+
+
+@code {
+
+    private IEnumerable<IdentityError>? identityErrors;
+
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+
+    private string? Message =>
+        identityErrors is null
+            ? null
+            : $"Error: {string.Join(
+                ", ",
+                identityErrors.Select(
+                    error => error.Description))}";
+
+
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+    }
+
+
+    public async Task RegisterUser(
+        EditContext editContext)
+    {
+        string email =
+            Input.Email.Trim();
+
+
+        // The permanent Admin address can never be used
+        // through public Member registration.
+        if (string.Equals(
+            email,
+            AccountRoles.PermanentAdminEmail,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            identityErrors =
+            [
+                new IdentityError
+                {
+                    Description =
+                        "This email address is reserved for the SecWeb administrator."
+                }
+            ];
+
+            return;
+        }
+
+
+        ApplicationUser user = CreateUser();
+
+        user.FirstName =
+            Input.FirstName.Trim();
+
+        user.LastName =
+            Input.LastName.Trim();
+
+
+        await UserStore.SetUserNameAsync(
+            user,
+            email,
+            CancellationToken.None);
+
+
+        IUserEmailStore<ApplicationUser> emailStore =
+            GetEmailStore();
+
+
+        await emailStore.SetEmailAsync(
+            user,
+            email,
+            CancellationToken.None);
+
+
+        IdentityResult result =
+            await UserManager.CreateAsync(
+                user,
+                Input.Password);
+
+
+        if (!result.Succeeded)
+        {
+            identityErrors = result.Errors;
+
+            return;
+        }
+
+
+        // Every public registration is a Member.
+        IdentityResult roleResult =
+            await UserManager.AddToRoleAsync(
+                user,
+                AccountRoles.Member);
+
+
+        if (!roleResult.Succeeded)
+        {
+            await UserManager.DeleteAsync(user);
+
+            identityErrors = roleResult.Errors;
+
+            return;
+        }
+
+
+        Logger.LogInformation(
+            "User created a new Member account.");
+
+
+        string userId =
+            await UserManager.GetUserIdAsync(user);
+
+
+        string code =
+            await UserManager
+                .GenerateEmailConfirmationTokenAsync(user);
+
+
+        code =
+            WebEncoders.Base64UrlEncode(
+                Encoding.UTF8.GetBytes(code));
+
+
+        string callbackUrl =
+            NavigationManager.GetUriWithQueryParameters(
+                NavigationManager
+                    .ToAbsoluteUri(
+                        "Account/ConfirmEmail")
+                    .AbsoluteUri,
+
+                new Dictionary<string, object?>
+                {
+                    ["userId"] = userId,
+                    ["code"] = code,
+                    ["returnUrl"] = ReturnUrl
+                });
+
+
+        await EmailSender.SendConfirmationLinkAsync(
+            user,
+            email,
+            HtmlEncoder.Default.Encode(callbackUrl));
+
+
+        if (UserManager.Options.SignIn.RequireConfirmedAccount)
+        {
+            RedirectManager.RedirectTo(
+                "Account/RegisterConfirmation",
+
+                new()
+                {
+                    ["email"] = email,
+                    ["returnUrl"] = ReturnUrl
+                });
+        }
+        else
+        {
+            await SignInManager.SignInAsync(
+                user,
+                isPersistent: false);
+
+            RedirectManager.RedirectTo(ReturnUrl);
+        }
+    }
+
+
+    private ApplicationUser CreateUser()
+    {
+        return new ApplicationUser();
+    }
+
+
+    private IUserEmailStore<ApplicationUser>
+        GetEmailStore()
+    {
+        if (!UserManager.SupportsUserEmail)
+        {
+            throw new NotSupportedException(
+                "The user store does not support email.");
+        }
+
+        return (IUserEmailStore<ApplicationUser>)UserStore;
+    }
+
+
+    private sealed class InputModel
+    {
+        [Required]
+        [StringLength(100)]
+        [Display(Name = "First name")]
+        public string FirstName { get; set; } = "";
+
+
+        [Required]
+        [StringLength(100)]
+        [Display(Name = "Last name")]
+        public string LastName { get; set; } = "";
+
+
+        [Required]
+        [EmailAddress]
+        [Display(Name = "Email")]
+        public string Email { get; set; } = "";
+
+
+        [Required]
+        [StringLength(
+            100,
+            ErrorMessage =
+                "The {0} must be at least {2} and at max {1} characters long.",
+            MinimumLength = 6)]
+        [DataType(DataType.Password)]
+        [Display(Name = "Password")]
+        public string Password { get; set; } = "";
+
+
+        [DataType(DataType.Password)]
+        [Display(Name = "Confirm password")]
+        [Compare(
+            "Password",
+            ErrorMessage =
+                "The password and confirmation password do not match.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}

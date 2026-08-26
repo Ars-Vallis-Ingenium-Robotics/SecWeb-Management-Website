@@ -1,0 +1,128 @@
+﻿@page "/projects"
+
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using SecWeb.Data
+@using SecWeb.Data.Models
+@using SecWeb.Services
+
+@attribute [Authorize]
+
+@inject ProjectService ProjectService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Projects</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+
+    <div>
+        <h1>Projects</h1>
+
+        <p class="mb-0">
+            View projects, teams, and your project memberships.
+        </p>
+    </div>
+
+    <AuthorizeView Roles="@AccountRoles.Admin">
+        <Authorized>
+            <button class="btn btn-primary"
+                    @onclick="CreateProject">
+                New Project
+            </button>
+        </Authorized>
+    </AuthorizeView>
+
+</div>
+
+
+@if (isLoading)
+{
+    <p>
+        <em>Loading projects...</em>
+    </p>
+}
+else if (projects.Count == 0)
+{
+    <div class="alert alert-info">
+        No projects have been created yet.
+    </div>
+}
+else
+{
+    <div class="row">
+
+        @foreach (Project project in projects)
+        {
+            <div class="col-md-6 col-lg-4 mb-3">
+
+                <div class="card h-100">
+
+                    <div class="card-body">
+
+                        <h5 class="card-title">
+                            @project.Name
+                        </h5>
+
+                        @if (!string.IsNullOrWhiteSpace(project.Description))
+                        {
+                            <p class="card-text">
+                                @project.Description
+                            </p>
+                        }
+
+                        <p class="card-text">
+                            <small class="text-body-secondary">
+                                @project.Teams.Count team@(project.Teams.Count == 1 ? "" : "s")
+                            </small>
+                        </p>
+
+                    </div>
+
+                    <div class="card-footer bg-transparent">
+
+                        <button class="btn btn-outline-primary"
+                                @onclick="() => OpenProject(project.Id)">
+                            Open Project
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+        }
+
+    </div>
+}
+
+
+@code {
+
+    private List<Project> projects = new();
+
+    private bool isLoading = true;
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        projects =
+            await ProjectService.GetProjectsAsync();
+
+        isLoading = false;
+    }
+
+
+    private void OpenProject(int projectId)
+    {
+        Navigation.NavigateTo(
+            $"/projects/{projectId}");
+    }
+
+
+    private void CreateProject()
+    {
+        Navigation.NavigateTo(
+            "/projects/new");
+    }
+}

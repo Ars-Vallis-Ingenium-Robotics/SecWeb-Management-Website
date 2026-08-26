@@ -1,0 +1,1154 @@
+﻿@page "/projects/{Id:int}"
+
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using SecWeb.Data
+@using SecWeb.Data.Models
+@using SecWeb.Services
+
+@attribute [Authorize]
+
+@inject ProjectService ProjectService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Project</PageTitle>
+
+
+@if (isLoading)
+{
+    <p>
+        <em>Loading project...</em>
+    </p>
+}
+else if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="alert alert-danger">
+        @errorMessage
+    </div>
+
+    <button class="btn btn-secondary"
+            @onclick="BackToProjects">
+
+        Back to Projects
+
+    </button>
+}
+else if (project != null)
+{
+    @* =========================================================
+       PROJECT HEADER
+       ========================================================= *@
+
+    <div class="d-flex justify-content-between align-items-start mb-4">
+
+        <div>
+
+            <h1>
+                @project.Name
+            </h1>
+
+
+            @if (!string.IsNullOrWhiteSpace(
+                project.Description))
+            {
+                <p class="mb-0">
+                    @project.Description
+                </p>
+            }
+
+        </div>
+
+
+        <div class="d-flex gap-2">
+
+            <button type="button"
+                    class="btn btn-outline-secondary"
+                    @onclick="BackToProjects">
+
+                Back
+
+            </button>
+
+
+            <AuthorizeView Roles="@AccountRoles.Admin">
+
+                <Authorized Context="deleteAdminContext">
+
+                    <button type="button"
+                            class="btn btn-outline-danger"
+                            @onclick="ShowDeleteProjectConfirmation">
+
+                        Delete Project
+
+                    </button>
+
+                </Authorized>
+
+            </AuthorizeView>
+
+        </div>
+
+    </div>
+
+
+
+    @* =========================================================
+       MESSAGES
+       ========================================================= *@
+
+    @if (!string.IsNullOrWhiteSpace(
+        successMessage))
+    {
+        <div class="alert alert-success">
+            @successMessage
+        </div>
+    }
+
+
+    @if (!string.IsNullOrWhiteSpace(
+        actionError))
+    {
+        <div class="alert alert-danger">
+            @actionError
+        </div>
+    }
+
+
+
+    @* =========================================================
+       ADMIN PROJECT CONTROLS
+       ========================================================= *@
+
+    <AuthorizeView Roles="@AccountRoles.Admin">
+
+        <Authorized Context="projectAdminContext">
+
+            <div class="card mb-4">
+
+                <div class="card-header">
+
+                    <strong>
+                        Project Administration
+                    </strong>
+
+                </div>
+
+
+                <div class="card-body">
+
+                    <p class="text-secondary">
+                        Create teams or subsystems for this project.
+                    </p>
+
+
+                    <div class="row">
+
+                        <div class="col-md-8 mb-2">
+
+                            <label class="form-label">
+                                New Team / Subsystem
+                            </label>
+
+
+                            <input class="form-control"
+                                   @bind="newTeamName"
+                                   placeholder="Example: Software" />
+
+                        </div>
+
+
+                        <div class="col-md-4 d-flex align-items-end mb-2">
+
+                            <button type="button"
+                                    class="btn btn-primary"
+                                    @onclick="AddTeamAsync">
+
+                                Add Team
+
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </Authorized>
+
+    </AuthorizeView>
+
+
+
+    @* =========================================================
+       TEAMS / SUBSYSTEMS
+       ========================================================= *@
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+
+        <h2 class="mb-0">
+            Teams / Subsystems
+        </h2>
+
+    </div>
+
+
+    @if (project.Teams.Count == 0)
+    {
+        <div class="alert alert-info">
+
+            This project does not have any teams yet.
+
+        </div>
+    }
+    else
+    {
+        <div class="row">
+
+            @foreach (
+                ProjectTeam team
+                in project.Teams
+                    .OrderBy(team => team.Name))
+            {
+                ProjectMembership? myMembership =
+                    memberships.FirstOrDefault(
+                        membership =>
+                            membership.ProjectTeamId ==
+                            team.Id);
+
+
+                List<ProjectMembership> teamMembers =
+                    allMemberships
+                        .Where(
+                            membership =>
+                                membership.ProjectTeamId ==
+                                team.Id)
+                        .ToList();
+
+
+                ProjectMembership? lead =
+                    teamMembers
+                        .FirstOrDefault(
+                            membership =>
+                                membership.Role ==
+                                ProjectRole.Lead);
+
+
+                <div class="col-lg-6 mb-3">
+
+                    <div class="card h-100">
+
+                        @* =====================================
+                           TEAM HEADER
+                           ===================================== *@
+
+                        <div class="card-header d-flex justify-content-between align-items-center">
+
+                            <strong>
+                                @team.Name
+                            </strong>
+
+
+                            @* ---------------------------------
+                               ADMIN DELETE TEAM BUTTON
+                               --------------------------------- *@
+
+                            <AuthorizeView Roles="@AccountRoles.Admin">
+
+                                <Authorized Context="teamDeleteAdminContext">
+
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-danger"
+                                            @onclick="() => ShowDeleteTeamConfirmation(team.Id)">
+
+                                        Delete Team
+
+                                    </button>
+
+                                </Authorized>
+
+                            </AuthorizeView>
+
+                        </div>
+
+
+                        <div class="card-body">
+
+
+                            @* =================================
+                               CURRENT LEAD
+                               ================================= *@
+
+                            <p>
+
+                                <strong>
+                                    Lead:
+                                </strong>
+
+
+                                @if (lead?.User != null)
+                                {
+                                    <span>
+                                        @lead.User.FirstName
+                                        @lead.User.LastName
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="text-secondary">
+                                        No Lead Assigned
+                                    </span>
+                                }
+
+                            </p>
+
+
+
+                            @* =================================
+                               MEMBER COUNT
+                               ================================= *@
+
+                            <p>
+
+                                <strong>
+                                    Members:
+                                </strong>
+
+                                @teamMembers.Count
+
+                            </p>
+
+
+
+                            @* =================================
+                               CURRENT USER MEMBERSHIP
+                               ================================= *@
+
+                            @if (myMembership == null)
+                            {
+                                <button type="button"
+                                        class="btn btn-outline-primary"
+                                        @onclick="() => JoinTeamAsync(team.Id)">
+
+                                    Join Team
+
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="badge text-bg-success">
+
+                                    Joined
+
+                                </span>
+
+
+                                @if (myMembership.Role ==
+                                     ProjectRole.Lead)
+                                {
+                                    <span class="badge text-bg-primary ms-1">
+
+                                        Lead
+
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge text-bg-secondary ms-1">
+
+                                        Member
+
+                                    </span>
+                                }
+                            }
+
+
+
+                            @* =================================
+                               ADMIN LEAD MANAGEMENT
+                               ================================= *@
+
+                            <AuthorizeView Roles="@AccountRoles.Admin">
+
+                                <Authorized Context="teamAdminContext">
+
+                                    <hr />
+
+
+                                    <h6>
+                                        Lead Assignment
+                                    </h6>
+
+
+                                    @if (teamMembers.Count == 0)
+                                    {
+                                        <p class="text-secondary">
+
+                                            A user must join this team
+                                            before they can be assigned
+                                            as its Lead.
+
+                                        </p>
+                                    }
+                                    else
+                                    {
+                                        <select class="form-select mb-2"
+                                                @bind="selectedLeadUsers[team.Id]">
+
+                                            <option value="">
+
+                                                Select team member...
+
+                                            </option>
+
+
+                                            @foreach (
+                                                ProjectMembership member
+                                                in teamMembers)
+                                            {
+                                                if (member.User != null)
+                                                {
+                                                    <option value="@member.UserId">
+
+                                                        @member.User.FirstName
+                                                        @member.User.LastName
+
+                                                    </option>
+                                                }
+                                            }
+
+                                        </select>
+
+
+                                        <div class="d-flex flex-wrap gap-2">
+
+                                            <button type="button"
+                                                    class="btn btn-sm btn-outline-primary"
+                                                    @onclick="() => AssignLeadAsync(team.Id)">
+
+                                                Assign Lead
+
+                                            </button>
+
+
+                                            @if (lead != null)
+                                            {
+                                                <button type="button"
+                                                        class="btn btn-sm btn-outline-danger"
+                                                        @onclick="() => RemoveLeadAsync(team.Id)">
+
+                                                    Remove Lead
+
+                                                </button>
+                                            }
+
+                                        </div>
+                                    }
+
+                                </Authorized>
+
+                            </AuthorizeView>
+
+
+
+                            @* =================================
+                               DELETE TEAM CONFIRMATION
+                               ================================= *@
+
+                            @if (teamPendingDeleteId == team.Id)
+                            {
+                                <div class="alert alert-danger mt-3 mb-0">
+
+                                    <p>
+                                        Are you sure you want to delete
+                                        <strong>@team.Name</strong>?
+                                    </p>
+
+
+                                    <p>
+                                        This will remove all Member
+                                        and Lead assignments from this
+                                        team.
+                                    </p>
+
+
+                                    <p>
+                                        User accounts will not be deleted.
+                                    </p>
+
+
+                                    <div class="d-flex gap-2">
+
+                                        <button type="button"
+                                                class="btn btn-danger btn-sm"
+                                                @onclick="() => DeleteTeamAsync(team.Id)">
+
+                                            Yes, Delete Team
+
+                                        </button>
+
+
+                                        <button type="button"
+                                                class="btn btn-secondary btn-sm"
+                                                @onclick="CancelDeleteTeam">
+
+                                            Cancel
+
+                                        </button>
+
+                                    </div>
+
+                                </div>
+                            }
+
+                        </div>
+
+                    </div>
+
+                </div>
+            }
+
+        </div>
+    }
+
+
+
+    @* =========================================================
+       DELETE PROJECT CONFIRMATION
+       ========================================================= *@
+
+    @if (showDeleteProjectConfirmation)
+    {
+        <div class="card border-danger mt-4">
+
+            <div class="card-header">
+
+                <strong>
+                    Delete Project
+                </strong>
+
+            </div>
+
+
+            <div class="card-body">
+
+                <p>
+
+                    Are you sure you want to permanently delete
+
+                    <strong>
+                        @project.Name
+                    </strong>?
+
+                </p>
+
+
+                <div class="alert alert-danger">
+
+                    <strong>
+                        This action cannot be undone.
+                    </strong>
+
+                    <br />
+
+
+                    Deleting this project will also remove:
+
+
+                    <ul class="mb-0 mt-2">
+
+                        <li>
+                            All teams and subsystems
+                        </li>
+
+                        <li>
+                            All project memberships
+                        </li>
+
+                        <li>
+                            All Lead assignments
+                        </li>
+
+                    </ul>
+
+                </div>
+
+
+                <p>
+
+                    SecWeb user accounts will
+                    <strong>not</strong>
+                    be deleted.
+
+                </p>
+
+
+                <div class="d-flex gap-2">
+
+                    <button type="button"
+                            class="btn btn-danger"
+                            @onclick="DeleteProjectAsync">
+
+                        Yes, Delete Project
+
+                    </button>
+
+
+                    <button type="button"
+                            class="btn btn-secondary"
+                            @onclick="CancelDeleteProject">
+
+                        Cancel
+
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+    }
+}
+
+
+
+@code {
+
+    // =========================================================
+    // URL PROJECT ID
+    // =========================================================
+
+    [Parameter]
+    public int Id { get; set; }
+
+
+
+    // =========================================================
+    // PROJECT DATA
+    // =========================================================
+
+    private Project? project;
+
+    private string? userId;
+
+
+    private List<ProjectMembership> allMemberships =
+        new();
+
+
+    private List<ProjectMembership> memberships =
+        new();
+
+
+    private Dictionary<int, string> selectedLeadUsers =
+        new();
+
+
+
+    // =========================================================
+    // PAGE STATE
+    // =========================================================
+
+    private bool isLoading = true;
+
+    private bool showDeleteProjectConfirmation;
+
+
+    // Stores which team is currently waiting for
+    // delete confirmation.
+    //
+    // null = no team is currently being deleted.
+
+    private int? teamPendingDeleteId;
+
+
+
+    // =========================================================
+    // FORM DATA
+    // =========================================================
+
+    private string newTeamName = "";
+
+
+
+    // =========================================================
+    // MESSAGES
+    // =========================================================
+
+    private string? errorMessage;
+
+    private string? actionError;
+
+    private string? successMessage;
+
+
+
+    // =========================================================
+    // LOAD PROJECT
+    // =========================================================
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading =
+            true;
+
+
+        errorMessage =
+            null;
+
+
+        AuthenticationState state =
+            await AuthenticationStateProvider
+                .GetAuthenticationStateAsync();
+
+
+        userId =
+            state.User
+
+                .FindFirst(
+                    ClaimTypes.NameIdentifier)?
+
+                .Value;
+
+
+        if (string.IsNullOrWhiteSpace(
+            userId))
+        {
+            errorMessage =
+                "Unable to determine the currently logged-in user.";
+
+
+            isLoading =
+                false;
+
+
+            return;
+        }
+
+
+        await ReloadAsync();
+
+
+        isLoading =
+            false;
+    }
+
+
+
+    // =========================================================
+    // RELOAD PROJECT
+    // =========================================================
+
+    private async Task ReloadAsync()
+    {
+        project =
+            await ProjectService
+                .GetProjectAsync(Id);
+
+
+        if (project == null)
+        {
+            errorMessage =
+                "The project could not be found.";
+
+
+            return;
+        }
+
+
+        allMemberships =
+            await ProjectService
+                .GetProjectMembershipsAsync(Id);
+
+
+        memberships =
+            allMemberships
+
+                .Where(
+                    membership =>
+                        membership.UserId ==
+                        userId)
+
+                .ToList();
+
+
+        selectedLeadUsers.Clear();
+
+
+        foreach (
+            ProjectTeam team
+            in project.Teams)
+        {
+            ProjectMembership? currentLead =
+                allMemberships
+
+                    .FirstOrDefault(
+                        membership =>
+
+                            membership.ProjectTeamId ==
+                                team.Id &&
+
+                            membership.Role ==
+                                ProjectRole.Lead);
+
+
+            selectedLeadUsers[team.Id] =
+                currentLead?.UserId ?? "";
+        }
+    }
+
+
+
+    // =========================================================
+    // MEMBER JOINS TEAM
+    // =========================================================
+
+    private async Task JoinTeamAsync(
+        int teamId)
+    {
+        if (string.IsNullOrWhiteSpace(
+            userId))
+        {
+            return;
+        }
+
+
+        ClearMessages();
+
+
+        try
+        {
+            await ProjectService
+                .JoinTeamAsync(
+                    Id,
+                    teamId,
+                    userId);
+
+
+            successMessage =
+                "You joined the team as a Member.";
+
+
+            await ReloadAsync();
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                exception.Message;
+        }
+    }
+
+
+
+    // =========================================================
+    // ADMIN ADDS TEAM
+    // =========================================================
+
+    private async Task AddTeamAsync()
+    {
+        ClearMessages();
+
+
+        if (string.IsNullOrWhiteSpace(
+            newTeamName))
+        {
+            actionError =
+                "Enter a team or subsystem name.";
+
+
+            return;
+        }
+
+
+        try
+        {
+            await ProjectService
+                .AddTeamAsync(
+                    Id,
+                    newTeamName.Trim());
+
+
+            newTeamName =
+                "";
+
+
+            successMessage =
+                "Team created successfully.";
+
+
+            await ReloadAsync();
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                exception.Message;
+        }
+    }
+
+
+
+    // =========================================================
+    // SHOW DELETE TEAM CONFIRMATION
+    // =========================================================
+
+    private void ShowDeleteTeamConfirmation(
+        int teamId)
+    {
+        ClearMessages();
+
+
+        // Close project deletion confirmation if it was open.
+        showDeleteProjectConfirmation =
+            false;
+
+
+        teamPendingDeleteId =
+            teamId;
+    }
+
+
+
+    // =========================================================
+    // CANCEL DELETE TEAM
+    // =========================================================
+
+    private void CancelDeleteTeam()
+    {
+        teamPendingDeleteId =
+            null;
+    }
+
+
+
+    // =========================================================
+    // ADMIN DELETES TEAM
+    // =========================================================
+
+    private async Task DeleteTeamAsync(
+        int teamId)
+    {
+        ClearMessages();
+
+
+        try
+        {
+            string teamName =
+                project?
+                    .Teams
+                    .FirstOrDefault(
+                        team =>
+                            team.Id == teamId)?
+                    .Name
+                ?? "Team";
+
+
+            await ProjectService
+                .DeleteTeamAsync(
+                    Id,
+                    teamId);
+
+
+            teamPendingDeleteId =
+                null;
+
+
+            successMessage =
+                $"{teamName} was deleted successfully.";
+
+
+            await ReloadAsync();
+        }
+        catch (Exception exception)
+        {
+            teamPendingDeleteId =
+                null;
+
+
+            actionError =
+                exception.Message;
+        }
+    }
+
+
+
+    // =========================================================
+    // ADMIN ASSIGNS LEAD
+    // =========================================================
+
+    private async Task AssignLeadAsync(
+        int teamId)
+    {
+        ClearMessages();
+
+
+        if (!selectedLeadUsers.TryGetValue(
+                teamId,
+                out string? selectedUserId) ||
+
+            string.IsNullOrWhiteSpace(
+                selectedUserId))
+        {
+            actionError =
+                "Select a team member first.";
+
+
+            return;
+        }
+
+
+        try
+        {
+            await ProjectService
+                .AssignLeadAsync(
+                    Id,
+                    teamId,
+                    selectedUserId);
+
+
+            successMessage =
+                "Lead assignment updated successfully.";
+
+
+            await ReloadAsync();
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                exception.Message;
+        }
+    }
+
+
+
+    // =========================================================
+    // ADMIN REMOVES LEAD
+    // =========================================================
+
+    private async Task RemoveLeadAsync(
+        int teamId)
+    {
+        ClearMessages();
+
+
+        try
+        {
+            await ProjectService
+                .RemoveLeadAsync(
+                    Id,
+                    teamId);
+
+
+            successMessage =
+                "Lead role removed. The user is now a Member of the team.";
+
+
+            await ReloadAsync();
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                exception.Message;
+        }
+    }
+
+
+
+    // =========================================================
+    // SHOW DELETE PROJECT CONFIRMATION
+    // =========================================================
+
+    private void ShowDeleteProjectConfirmation()
+    {
+        ClearMessages();
+
+
+        // Close any team deletion confirmation.
+        teamPendingDeleteId =
+            null;
+
+
+        showDeleteProjectConfirmation =
+            true;
+    }
+
+
+
+    // =========================================================
+    // CANCEL PROJECT DELETION
+    // =========================================================
+
+    private void CancelDeleteProject()
+    {
+        showDeleteProjectConfirmation =
+            false;
+    }
+
+
+
+    // =========================================================
+    // DELETE PROJECT
+    // =========================================================
+
+    private async Task DeleteProjectAsync()
+    {
+        if (project == null)
+        {
+            return;
+        }
+
+
+        ClearMessages();
+
+
+        try
+        {
+            await ProjectService
+                .DeleteProjectAsync(
+                    project.Id);
+
+
+            Navigation.NavigateTo(
+                "/projects");
+        }
+        catch (Exception exception)
+        {
+            showDeleteProjectConfirmation =
+                false;
+
+
+            actionError =
+                exception.Message;
+        }
+    }
+
+
+
+    // =========================================================
+    // NAVIGATION
+    // =========================================================
+
+    private void BackToProjects()
+    {
+        Navigation.NavigateTo(
+            "/projects");
+    }
+
+
+
+    // =========================================================
+    // MESSAGE HELPER
+    // =========================================================
+
+    private void ClearMessages()
+    {
+        successMessage =
+            null;
+
+
+        actionError =
+            null;
+    }
+}

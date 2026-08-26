@@ -1,0 +1,178 @@
+﻿@page "/projects/new"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using SecWeb.Data
+@using SecWeb.Data.Models
+@using SecWeb.Services
+
+@attribute [Authorize(Roles = AccountRoles.Admin)]
+
+@inject ProjectService ProjectService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>New Project</PageTitle>
+
+<h1>New Project</h1>
+
+<p>
+    Create a new project. Teams and Lead assignments can
+    be added after the project is created.
+</p>
+
+
+<EditForm Model="Input"
+          OnValidSubmit="CreateProjectAsync">
+
+    <DataAnnotationsValidator />
+
+    <ValidationSummary class="text-danger"
+                       role="alert" />
+
+
+    <div class="mb-3">
+
+        <label class="form-label">
+            Project Name
+        </label>
+
+        <InputText class="form-control"
+                   @bind-Value="Input.Name" />
+
+        <ValidationMessage For="() => Input.Name"
+                           class="text-danger" />
+
+    </div>
+
+
+    <div class="mb-3">
+
+        <label class="form-label">
+            Description
+        </label>
+
+        <InputTextArea class="form-control"
+                       rows="5"
+                       @bind-Value="Input.Description" />
+
+    </div>
+
+
+    <div class="d-flex gap-2">
+
+        <button type="submit"
+                class="btn btn-primary"
+                disabled="@isSaving">
+
+            @if (isSaving)
+            {
+                <span>Creating...</span>
+            }
+            else
+            {
+                <span>Create Project</span>
+            }
+
+        </button>
+
+
+        <button type="button"
+                class="btn btn-secondary"
+                @onclick="Cancel">
+
+            Cancel
+
+        </button>
+
+    </div>
+
+</EditForm>
+
+
+@code {
+
+    private CreateProjectModel Input { get; set; } =
+        new();
+
+
+    private bool isSaving;
+
+
+    private async Task CreateProjectAsync()
+    {
+        if (isSaving)
+        {
+            return;
+        }
+
+
+        isSaving = true;
+
+
+        AuthenticationState state =
+            await AuthenticationStateProvider
+                .GetAuthenticationStateAsync();
+
+
+        string? userId =
+            state.User
+                .FindFirst(
+                    ClaimTypes.NameIdentifier)?
+                .Value;
+
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            isSaving = false;
+
+            return;
+        }
+
+
+        Project project =
+            new()
+            {
+                Name = Input.Name.Trim(),
+
+                Description =
+                    Input.Description?.Trim(),
+
+                CreatedAt =
+                    DateTime.UtcNow,
+
+                CreatedByUserId =
+                    userId
+            };
+
+
+        Project createdProject =
+            await ProjectService
+                .CreateProjectAsync(project);
+
+
+        Navigation.NavigateTo(
+            $"/projects/{createdProject.Id}");
+    }
+
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo(
+            "/projects");
+    }
+
+
+    private sealed class CreateProjectModel
+    {
+        [Required]
+        [StringLength(200)]
+        public string Name { get; set; } = "";
+
+
+        [StringLength(2000)]
+        public string? Description { get; set; }
+    }
+}

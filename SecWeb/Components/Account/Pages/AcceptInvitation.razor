@@ -1,0 +1,387 @@
+@page "/Account/AcceptInvitation"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using SecWeb.Data
+
+@inject UserManager<ApplicationUser> UserManager
+
+<PageTitle>Set Up SecWeb Account</PageTitle>
+
+<h1>Set Up Your SecWeb Account</h1>
+
+@if (isLoading)
+{
+    <p>
+        <em>Checking invitation...</em>
+    </p>
+}
+else if (!string.IsNullOrWhiteSpace(invitationError))
+{
+    <div class="alert alert-danger">
+        @invitationError
+    </div>
+
+    <a class="btn btn-secondary"
+       href="/Account/Login">
+        Back to Login
+    </a>
+}
+else if (setupComplete)
+{
+    <div class="alert alert-success">
+        <h4 class="alert-heading">
+            Account setup complete
+        </h4>
+
+        <p>
+            Your password has been created and your email
+            address has been confirmed.
+        </p>
+
+        <p class="mb-0">
+            You can now log in to SecWeb.
+        </p>
+    </div>
+
+    <a class="btn btn-primary"
+       href="/Account/Login">
+        Go to Login
+    </a>
+}
+else if (user != null)
+{
+    <div class="row">
+        <div class="col-lg-6">
+
+            <div class="card">
+
+                <div class="card-header">
+                    <strong>Complete Account Setup</strong>
+                </div>
+
+                <div class="card-body">
+
+                    <p>
+                        Hello <strong>@user.FirstName @user.LastName</strong>,
+                    </p>
+
+                    <p>
+                        An administrator has created a SecWeb
+                        account for:
+                    </p>
+
+                    <p>
+                        <strong>@user.Email</strong>
+                    </p>
+
+                    @if (!string.IsNullOrWhiteSpace(roleName))
+                    {
+                        <p>
+                            Access Level:
+                            <strong>@roleName</strong>
+                        </p>
+                    }
+
+                    <hr />
+
+                    <EditForm Model="Input"
+                              OnValidSubmit="CompleteSetupAsync"
+                              FormName="accept-invitation"
+                              method="post">
+
+                        <DataAnnotationsValidator />
+
+                        <ValidationSummary class="text-danger"
+                                           role="alert" />
+
+                        @if (!string.IsNullOrWhiteSpace(formError))
+                        {
+                            <div class="alert alert-danger">
+                                @formError
+                            </div>
+                        }
+
+                        <div class="form-floating mb-3">
+
+                            <InputText type="password"
+                                       @bind-Value="Input.Password"
+                                       id="Input.Password"
+                                       class="form-control"
+                                       autocomplete="new-password"
+                                       aria-required="true"
+                                       placeholder="Password" />
+
+                            <label for="Input.Password">
+                                Password
+                            </label>
+
+                            <ValidationMessage For="() => Input.Password"
+                                               class="text-danger" />
+
+                        </div>
+
+                        <div class="form-floating mb-3">
+
+                            <InputText type="password"
+                                       @bind-Value="Input.ConfirmPassword"
+                                       id="Input.ConfirmPassword"
+                                       class="form-control"
+                                       autocomplete="new-password"
+                                       aria-required="true"
+                                       placeholder="Confirm password" />
+
+                            <label for="Input.ConfirmPassword">
+                                Confirm Password
+                            </label>
+
+                            <ValidationMessage For="() => Input.ConfirmPassword"
+                                               class="text-danger" />
+
+                        </div>
+
+                        <button type="submit"
+                                class="w-100 btn btn-lg btn-primary"
+                                disabled="@isSubmitting">
+
+                            @if (isSubmitting)
+                            {
+                                <span>Setting Up Account...</span>
+                            }
+                            else
+                            {
+                                <span>Set Up Account</span>
+                            }
+
+                        </button>
+
+                    </EditForm>
+
+                </div>
+
+            </div>
+
+        </div>
+    </div>
+}
+
+
+@code {
+
+    private ApplicationUser? user;
+
+    private string? roleName;
+
+    private bool isLoading = true;
+
+    private bool isSubmitting;
+
+    private bool setupComplete;
+
+    private string? invitationError;
+
+    private string? formError;
+
+    private string? decodedToken;
+
+
+    [SupplyParameterFromQuery(Name = "userId")]
+    private string? UserId { get; set; }
+
+
+    [SupplyParameterFromQuery(Name = "code")]
+    private string? Code { get; set; }
+
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; }
+
+
+    public AcceptInvitation()
+    {
+        Input = new();
+    }
+
+
+    // ---------------------------------------------------------
+    // LOAD AND CHECK INVITATION
+    // ---------------------------------------------------------
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        isLoading = true;
+
+
+        if (string.IsNullOrWhiteSpace(UserId) ||
+            string.IsNullOrWhiteSpace(Code))
+        {
+            invitationError =
+                "This account invitation is invalid.";
+
+            isLoading = false;
+
+            return;
+        }
+
+
+        user =
+            await UserManager.FindByIdAsync(UserId);
+
+
+        if (user == null)
+        {
+            invitationError =
+                "This account invitation is invalid.";
+
+            isLoading = false;
+
+            return;
+        }
+
+
+        bool hasPassword =
+            await UserManager.HasPasswordAsync(user);
+
+
+        if (hasPassword)
+        {
+            invitationError =
+                "This account has already been set up. Please log in normally.";
+
+            isLoading = false;
+
+            return;
+        }
+
+
+        try
+        {
+            byte[] decodedBytes =
+                WebEncoders.Base64UrlDecode(Code);
+
+            decodedToken =
+                Encoding.UTF8.GetString(decodedBytes);
+        }
+        catch
+        {
+            invitationError =
+                "This account invitation is invalid.";
+
+            isLoading = false;
+
+            return;
+        }
+
+
+        IList<string> roles =
+            await UserManager.GetRolesAsync(user);
+
+        roleName =
+            roles.FirstOrDefault();
+
+
+        isLoading = false;
+    }
+
+
+    // ---------------------------------------------------------
+    // COMPLETE ACCOUNT SETUP
+    // ---------------------------------------------------------
+
+    private async Task CompleteSetupAsync()
+    {
+        if (user == null ||
+            string.IsNullOrWhiteSpace(decodedToken))
+        {
+            return;
+        }
+
+
+        if (isSubmitting)
+        {
+            return;
+        }
+
+
+        isSubmitting = true;
+
+        formError = null;
+
+
+        IdentityResult passwordResult =
+            await UserManager.ResetPasswordAsync(
+                user,
+                decodedToken,
+                Input.Password);
+
+
+        if (!passwordResult.Succeeded)
+        {
+            formError =
+                string.Join(
+                    " ",
+                    passwordResult.Errors.Select(
+                        error => error.Description));
+
+            isSubmitting = false;
+
+            return;
+        }
+
+
+        // The invitation was delivered to this email address.
+        // Successfully using the invitation link confirms that
+        // the recipient has access to the address.
+        user.EmailConfirmed = true;
+
+
+        IdentityResult updateResult =
+            await UserManager.UpdateAsync(user);
+
+
+        if (!updateResult.Succeeded)
+        {
+            formError =
+                string.Join(
+                    " ",
+                    updateResult.Errors.Select(
+                        error => error.Description));
+
+            isSubmitting = false;
+
+            return;
+        }
+
+
+        setupComplete = true;
+
+        isSubmitting = false;
+    }
+
+
+    private sealed class InputModel
+    {
+        [Required]
+        [StringLength(
+            100,
+            ErrorMessage =
+                "The password must be at least {2} characters long.",
+            MinimumLength = 6)]
+        [DataType(DataType.Password)]
+        [Display(Name = "Password")]
+        public string Password { get; set; } = "";
+
+
+        [Required]
+        [DataType(DataType.Password)]
+        [Display(Name = "Confirm password")]
+        [Compare(
+            "Password",
+            ErrorMessage =
+                "The password and confirmation password do not match.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}

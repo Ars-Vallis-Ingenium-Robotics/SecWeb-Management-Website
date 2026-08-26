@@ -1,0 +1,29 @@
+﻿# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build output
+**/bin/
+**/obj/
+
+# Publish output
+publish/
+**/publish/
+
+# Logs
+*.log
+logs/
+
+# Secrets
+secrets.json
+appsettings.Production.json
+
+# ZIP backups
+*.zip
+
+# Operating system files
+Thumbs.db
+.DS_Store

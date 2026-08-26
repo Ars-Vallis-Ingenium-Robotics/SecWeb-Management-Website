@@ -1,0 +1,557 @@
+@page "/meetings/new"
+
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using SecWeb.Data
+@using SecWeb.Data.Models
+@using SecWeb.Services
+
+@attribute [Authorize]
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject MeetingService MeetingService
+@inject NavigationManager Navigation
+
+<PageTitle>New Meeting</PageTitle>
+
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+
+    <div>
+
+        <h1>
+            New Meeting
+        </h1>
+
+        <p class="mb-0">
+            Create meeting documentation for a team you Lead.
+        </p>
+
+    </div>
+
+
+    <button type="button"
+            class="btn btn-outline-secondary"
+            @onclick="BackToMeetings">
+
+        Back
+
+    </button>
+
+</div>
+
+
+@if (isLoading)
+{
+    <p>
+        <em>Loading...</em>
+    </p>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <div class="alert alert-danger">
+        @loadError
+    </div>
+}
+else if (!canCreateMeeting)
+{
+    <div class="alert alert-warning">
+
+        Only team Leads and Admins can create meetings.
+
+    </div>
+
+
+    <button type="button"
+            class="btn btn-secondary"
+            @onclick="BackToMeetings">
+
+        Back to Meetings
+
+    </button>
+}
+else if (availableTeams.Count == 0)
+{
+    <div class="alert alert-info">
+
+        @if (isAdmin)
+        {
+            <span>
+                There are currently no teams available for meetings.
+            </span>
+        }
+        else
+        {
+            <span>
+                You do not currently Lead any teams that can have a meeting.
+            </span>
+        }
+
+    </div>
+
+
+    <button type="button"
+            class="btn btn-secondary"
+            @onclick="BackToMeetings">
+
+        Back to Meetings
+
+    </button>
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(saveError))
+    {
+        <div class="alert alert-danger">
+            @saveError
+        </div>
+    }
+
+
+    <EditForm Model="meeting"
+              OnValidSubmit="CreateMeetingAsync">
+
+        <DataAnnotationsValidator />
+
+        <ValidationSummary />
+
+
+        <div class="card">
+
+            <div class="card-header">
+
+                <strong>
+                    Meeting Information
+                </strong>
+
+            </div>
+
+
+            <div class="card-body">
+
+
+                @* =================================================
+                   PROJECT / TEAM
+                   ================================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Project / Team
+                    </label>
+
+
+                    <InputSelect class="form-select"
+                                 @bind-Value="meeting.ProjectTeamId">
+
+                        <option value="">
+                            Select a team or subsystem...
+                        </option>
+
+
+                        @foreach (
+                            ProjectTeam team
+                            in availableTeams)
+                        {
+                            <option value="@team.Id">
+
+                                @GetTeamDisplayName(
+                                    team)
+
+                            </option>
+                        }
+
+                    </InputSelect>
+
+                </div>
+
+
+                @* =================================================
+                   TITLE
+                   ================================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Meeting Title
+                    </label>
+
+
+                    <InputText class="form-control"
+                               @bind-Value="meeting.Title" />
+
+                </div>
+
+
+                @* =================================================
+                   DATE
+                   ================================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Meeting Date
+                    </label>
+
+
+                    <InputDate class="form-control"
+                               @bind-Value="meeting.MeetingDate" />
+
+                </div>
+
+
+                @* =================================================
+                   DESCRIPTION
+                   ================================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Description
+                    </label>
+
+
+                    <InputTextArea class="form-control"
+                                   rows="5"
+                                   @bind-Value="meeting.Description" />
+
+                </div>
+
+
+                @* =================================================
+                   ACTIONS
+                   ================================================= *@
+
+                <div class="d-flex gap-2">
+
+                    <button type="submit"
+                            class="btn btn-primary"
+                            disabled="@isSaving">
+
+                        @if (isSaving)
+                        {
+                            <span>
+                                Creating...
+                            </span>
+                        }
+                        else
+                        {
+                            <span>
+                                Create Meeting
+                            </span>
+                        }
+
+                    </button>
+
+
+                    <button type="button"
+                            class="btn btn-secondary"
+                            disabled="@isSaving"
+                            @onclick="BackToMeetings">
+
+                        Cancel
+
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </EditForm>
+}
+
+
+@code {
+
+    // =========================================================
+    // CURRENT USER
+    // =========================================================
+
+    private string? currentUserId;
+
+
+    private bool isAdmin;
+
+
+    // =========================================================
+    // PERMISSIONS
+    // =========================================================
+
+    private bool canCreateMeeting;
+
+
+    // =========================================================
+    // PAGE STATE
+    // =========================================================
+
+    private bool isLoading =
+        true;
+
+
+    private bool isSaving;
+
+
+    private string? loadError;
+
+
+    private string? saveError;
+
+
+    // =========================================================
+    // AVAILABLE TEAMS
+    // =========================================================
+
+    private List<ProjectTeam> availableTeams =
+        new();
+
+
+    // =========================================================
+    // MEETING MODEL
+    // =========================================================
+
+    private Meeting meeting =
+        new()
+        {
+            MeetingDate =
+                DateTime.Today
+        };
+
+
+    // =========================================================
+    // LOAD PAGE
+    // =========================================================
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading =
+            true;
+
+
+        loadError =
+            null;
+
+
+        try
+        {
+            // -----------------------------------------------------
+            // GET LOGGED-IN USER
+            // -----------------------------------------------------
+
+            AuthenticationState state =
+                await AuthenticationStateProvider
+                    .GetAuthenticationStateAsync();
+
+
+            currentUserId =
+                state.User
+
+                    .FindFirst(
+                        ClaimTypes.NameIdentifier)?
+
+                    .Value;
+
+
+            isAdmin =
+                state.User.IsInRole(
+                    AccountRoles.Admin);
+
+
+            // -----------------------------------------------------
+            // REQUIRE AUTHENTICATED USER ID
+            // -----------------------------------------------------
+
+            if (string.IsNullOrWhiteSpace(
+                currentUserId))
+            {
+                loadError =
+                    "Unable to determine the currently logged-in user.";
+
+
+                return;
+            }
+
+
+            // =====================================================
+            // IMPORTANT
+            // =====================================================
+            //
+            // Meeting.UserId is marked [Required].
+            //
+            // EditForm performs model validation BEFORE calling
+            // CreateMeetingAsync().
+            //
+            // Therefore UserId must already be populated before
+            // the user presses Create Meeting.
+            // =====================================================
+
+            meeting.UserId =
+                currentUserId;
+
+
+            // -----------------------------------------------------
+            // CAN THIS USER CREATE MEETINGS?
+            // -----------------------------------------------------
+
+            canCreateMeeting =
+                await MeetingService
+                    .CanCreateMeetingAsync(
+                        currentUserId,
+                        isAdmin);
+
+
+            if (!canCreateMeeting)
+            {
+                return;
+            }
+
+
+            // -----------------------------------------------------
+            // LOAD TEAMS THIS USER MAY MANAGE
+            // -----------------------------------------------------
+
+            availableTeams =
+                await MeetingService
+                    .GetManageableTeamsAsync(
+                        currentUserId,
+                        isAdmin);
+
+
+            // -----------------------------------------------------
+            // AUTO-SELECT IF THERE IS ONLY ONE TEAM
+            // -----------------------------------------------------
+
+            if (availableTeams.Count == 1)
+            {
+                meeting.ProjectTeamId =
+                    availableTeams[0].Id;
+            }
+        }
+        catch (Exception exception)
+        {
+            loadError =
+                $"The meeting form could not be loaded: {exception.Message}";
+        }
+        finally
+        {
+            isLoading =
+                false;
+        }
+    }
+
+
+    // =========================================================
+    // CREATE MEETING
+    // =========================================================
+
+    private async Task CreateMeetingAsync()
+    {
+        if (isSaving ||
+            !canCreateMeeting ||
+            string.IsNullOrWhiteSpace(
+                currentUserId))
+        {
+            return;
+        }
+
+
+        saveError =
+            null;
+
+
+        // -----------------------------------------------------
+        // TEAM REQUIRED
+        // -----------------------------------------------------
+
+        if (!meeting.ProjectTeamId.HasValue)
+        {
+            saveError =
+                "Select a project team or subsystem.";
+
+
+            return;
+        }
+
+
+        // -----------------------------------------------------
+        // KEEP USER ID SET
+        // -----------------------------------------------------
+        //
+        // This is intentionally set again immediately before
+        // saving as a second safety check.
+        // -----------------------------------------------------
+
+        meeting.UserId =
+            currentUserId;
+
+
+        isSaving =
+            true;
+
+
+        try
+        {
+            Meeting created =
+                await MeetingService
+                    .CreateMeetingAsync(
+                        meeting,
+                        currentUserId,
+                        isAdmin);
+
+
+            Navigation.NavigateTo(
+                $"/meetings/{created.Id}");
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            saveError =
+                exception.Message;
+        }
+        catch (InvalidOperationException exception)
+        {
+            saveError =
+                exception.Message;
+        }
+        catch (Exception exception)
+        {
+            saveError =
+                $"The meeting could not be created: {exception.Message}";
+        }
+        finally
+        {
+            isSaving =
+                false;
+        }
+    }
+
+
+    // =========================================================
+    // TEAM DISPLAY NAME
+    // =========================================================
+
+    private static string GetTeamDisplayName(
+        ProjectTeam team)
+    {
+        if (team.Project == null)
+        {
+            return team.Name;
+        }
+
+
+        return
+            $"{team.Project.Name} - {team.Name}";
+    }
+
+
+    // =========================================================
+    // BACK
+    // =========================================================
+
+    private void BackToMeetings()
+    {
+        Navigation.NavigateTo(
+            "/meetings");
+    }
+}

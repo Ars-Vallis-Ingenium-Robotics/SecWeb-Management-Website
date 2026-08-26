@@ -1,0 +1,1469 @@
+﻿@page "/time"
+
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using SecWeb.Data
+@using SecWeb.Data.Models
+@using SecWeb.Services
+
+@attribute [Authorize]
+
+@inject WorkLogService WorkLogService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Time Tracking</PageTitle>
+
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+
+    <div>
+
+        <h1>Time Tracking</h1>
+
+        <p class="mb-0">
+            View AVI Robotics work hours, project activity,
+            active timers, and recent work logs.
+        </p>
+
+    </div>
+
+
+    <a class="btn btn-primary"
+       href="/time/new">
+
+        Add My Time
+
+    </a>
+
+</div>
+
+
+@if (isLoading)
+{
+    <p>
+        <em>Loading time records...</em>
+    </p>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <div class="alert alert-danger">
+        @loadError
+    </div>
+}
+else
+{
+    @* =========================================================
+       ACTION MESSAGES
+       ========================================================= *@
+
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <div class="alert alert-success">
+            @successMessage
+        </div>
+    }
+
+
+    @if (!string.IsNullOrWhiteSpace(actionError))
+    {
+        <div class="alert alert-danger">
+            @actionError
+        </div>
+    }
+
+
+
+    @* =========================================================
+       SUMMARY CARDS
+       ========================================================= *@
+
+    <div class="row mb-4">
+
+        <div class="col-md-4 mb-3">
+
+            <div class="card h-100">
+
+                <div class="card-body">
+
+                    <h6 class="card-title text-secondary">
+                        My Completed Hours
+                    </h6>
+
+
+                    <h3 class="mb-0">
+
+                        @FormatDuration(
+                            summary?.MyCompletedTime
+                            ?? TimeSpan.Zero)
+
+                    </h3>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="col-md-4 mb-3">
+
+            <div class="card h-100">
+
+                <div class="card-body">
+
+                    <h6 class="card-title text-secondary">
+                        Overall Completed Hours
+                    </h6>
+
+
+                    <h3 class="mb-0">
+
+                        @FormatDuration(
+                            summary?.OverallCompletedTime
+                            ?? TimeSpan.Zero)
+
+                    </h3>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="col-md-4 mb-3">
+
+            <div class="card h-100">
+
+                <div class="card-body">
+
+                    <h6 class="card-title text-secondary">
+                        Active Timers
+                    </h6>
+
+
+                    <h3 class="mb-0">
+                        @(summary?.ActiveTimerCount ?? 0)
+                    </h3>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    @* =========================================================
+       FILTERS
+       ========================================================= *@
+
+    <div class="card mb-4">
+
+        <div class="card-header">
+            <strong>Filters</strong>
+        </div>
+
+
+        <div class="card-body">
+
+            <div class="row">
+
+                @* -------------------------------------------------
+                   PROJECT
+                   ------------------------------------------------- *@
+
+                <div class="col-lg-3 col-md-6 mb-3">
+
+                    <label class="form-label">
+                        Project
+                    </label>
+
+
+                    <select class="form-select"
+                            @bind="selectedProject">
+
+                        <option value="">
+                            All Projects
+                        </option>
+
+
+                        @foreach (
+                            string projectName
+                            in projectNames)
+                        {
+                            <option value="@projectName">
+                                @projectName
+                            </option>
+                        }
+
+                    </select>
+
+                </div>
+
+
+                @* -------------------------------------------------
+                   MEMBER
+                   ------------------------------------------------- *@
+
+                <div class="col-lg-3 col-md-6 mb-3">
+
+                    <label class="form-label">
+                        Member
+                    </label>
+
+
+                    <select class="form-select"
+                            @bind="selectedMemberId">
+
+                        <option value="">
+                            All Members
+                        </option>
+
+
+                        @foreach (
+                            MemberOption member
+                            in memberOptions)
+                        {
+                            <option value="@member.UserId">
+                                @member.DisplayName
+                            </option>
+                        }
+
+                    </select>
+
+                </div>
+
+
+                @* -------------------------------------------------
+                   ACTIVITY
+                   ------------------------------------------------- *@
+
+                <div class="col-lg-3 col-md-6 mb-3">
+
+                    <label class="form-label">
+                        Activity
+                    </label>
+
+
+                    <select class="form-select"
+                            @bind="selectedActivity">
+
+                        <option value="">
+                            All Activities
+                        </option>
+
+                        <option value="@WorkActivity.Meeting">
+                            Meeting
+                        </option>
+
+                        <option value="@WorkActivity.Booth">
+                            Booth
+                        </option>
+
+                        <option value="@WorkActivity.Working">
+                            Working
+                        </option>
+
+                        <option value="@WorkActivity.Volunteering">
+                            Volunteering
+                        </option>
+
+                    </select>
+
+                </div>
+
+
+                @* -------------------------------------------------
+                   SORT
+                   ------------------------------------------------- *@
+
+                <div class="col-lg-3 col-md-6 mb-3">
+
+                    <label class="form-label">
+                        Sort
+                    </label>
+
+
+                    <select class="form-select"
+                            @bind="sortMode">
+
+                        <option value="recent">
+                            Most Recent
+                        </option>
+
+                        <option value="oldest">
+                            Oldest
+                        </option>
+
+                        <option value="longest">
+                            Longest Duration
+                        </option>
+
+                        <option value="shortest">
+                            Shortest Duration
+                        </option>
+
+                        <option value="member">
+                            Member Name
+                        </option>
+
+                        <option value="project">
+                            Project Name
+                        </option>
+
+                    </select>
+
+                </div>
+
+
+                @* -------------------------------------------------
+                   FROM DATE
+                   ------------------------------------------------- *@
+
+                <div class="col-lg-3 col-md-6 mb-3">
+
+                    <label class="form-label">
+                        From Date
+                    </label>
+
+
+                    <input type="date"
+                           class="form-control"
+                           @bind="startDate"
+                           @bind:format="yyyy-MM-dd" />
+
+                </div>
+
+
+                @* -------------------------------------------------
+                   THROUGH DATE
+                   ------------------------------------------------- *@
+
+                <div class="col-lg-3 col-md-6 mb-3">
+
+                    <label class="form-label">
+                        Through Date
+                    </label>
+
+
+                    <input type="date"
+                           class="form-control"
+                           @bind="endDate"
+                           @bind:format="yyyy-MM-dd" />
+
+                </div>
+
+
+                @* -------------------------------------------------
+                   FILTER BUTTONS
+                   ------------------------------------------------- *@
+
+                <div class="col-lg-6 col-md-12 mb-3 d-flex align-items-end">
+
+                    <div class="d-flex gap-2">
+
+                        <button type="button"
+                                class="btn btn-outline-secondary"
+                                @onclick="ClearFilters">
+
+                            Clear Filters
+
+                        </button>
+
+
+                        <button type="button"
+                                class="btn btn-outline-primary"
+                                @onclick="RefreshAsync">
+
+                            Refresh
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+
+    @* =========================================================
+       FILTERED HOURS
+       ========================================================= *@
+
+    <div class="alert alert-secondary">
+
+        <strong>
+            Completed hours shown by current filters:
+        </strong>
+
+
+        @FormatDuration(
+            CalculateCompletedTime(
+                VisibleLogs))
+
+    </div>
+
+
+
+    @* =========================================================
+       WORK LOG TABLE
+       ========================================================= *@
+
+    <div class="card">
+
+        <div class="card-header d-flex justify-content-between align-items-center">
+
+            <strong>
+                Work Logs
+            </strong>
+
+
+            <span class="text-secondary">
+
+                @VisibleLogs.Count
+                record@(VisibleLogs.Count == 1 ? "" : "s")
+
+            </span>
+
+        </div>
+
+
+        <div class="card-body">
+
+            @if (VisibleLogs.Count == 0)
+            {
+                <p class="mb-0">
+                    No work logs match the selected filters.
+                </p>
+            }
+            else
+            {
+                <div class="table-responsive">
+
+                    <table class="table table-striped align-middle">
+
+                        <thead>
+
+                            <tr>
+                                <th>Member</th>
+                                <th>Project</th>
+                                <th>Activity</th>
+                                <th>Started</th>
+                                <th>Ended</th>
+                                <th>Duration</th>
+                                <th>Source</th>
+                                <th>Actions</th>
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            @foreach (
+                                WorkLog log
+                                in VisibleLogs)
+                            {
+                                <tr>
+
+                                    @* =================================
+                                       MEMBER
+                                       ================================= *@
+
+                                    <td>
+                                        @GetDisplayName(
+                                            log.User)
+                                    </td>
+
+
+                                    @* =================================
+                                       PROJECT
+                                       ================================= *@
+
+                                    <td>
+                                        @log.ProjectNameSnapshot
+                                    </td>
+
+
+                                    @* =================================
+                                       ACTIVITY
+                                       ================================= *@
+
+                                    <td>
+                                        @log.Activity
+                                    </td>
+
+
+                                    @* =================================
+                                       STARTED
+                                       ================================= *@
+
+                                    <td>
+                                        @FormatDateTime(
+                                            log.StartedAtUtc)
+                                    </td>
+
+
+                                    @* =================================
+                                       ENDED
+                                       ================================= *@
+
+                                    <td>
+
+                                        @if (log.EndedAtUtc.HasValue)
+                                        {
+                                            <span>
+
+                                                @FormatDateTime(
+                                                    log.EndedAtUtc.Value)
+
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge text-bg-success">
+                                                In Progress
+                                            </span>
+                                        }
+
+                                    </td>
+
+
+                                    @* =================================
+                                       DURATION
+                                       ================================= *@
+
+                                    <td>
+
+                                        @FormatDuration(
+                                            GetDuration(
+                                                log))
+
+                                    </td>
+
+
+                                    @* =================================
+                                       SOURCE
+                                       ================================= *@
+
+                                    <td>
+
+                                        @log.Source
+
+
+                                        @if (log.LastEditedAtUtc.HasValue)
+                                        {
+                                            <span class="badge text-bg-secondary ms-1">
+                                                Edited
+                                            </span>
+                                        }
+
+                                    </td>
+
+
+                                    @* =================================
+                                       ACTIONS
+                                       ================================= *@
+
+                                    <td>
+
+                                        @if (CanManage(log))
+                                        {
+                                            <div class="d-flex flex-wrap gap-2">
+
+                                                <a class="btn btn-sm btn-outline-primary"
+                                                   href="@($"/time/edit/{log.Id}")">
+
+                                                    Edit
+
+                                                </a>
+
+
+                                                <button type="button"
+                                                        class="btn btn-sm btn-outline-danger"
+                                                        @onclick="() => ShowDeleteConfirmation(log.Id)">
+
+                                                    Delete
+
+                                                </button>
+
+                                            </div>
+
+
+                                            @* =================================
+                                               DELETE CONFIRMATION
+                                               ================================= *@
+
+                                            @if (pendingDeleteWorkLogId == log.Id)
+                                            {
+                                                <div class="alert alert-danger mt-2 mb-0">
+
+                                                    <strong>
+                                                        Delete this time record?
+                                                    </strong>
+
+
+                                                    <p class="mb-2 mt-2">
+
+                                                        @GetDisplayName(log.User)
+                                                        —
+                                                        @log.ProjectNameSnapshot
+                                                        —
+                                                        @log.Activity
+
+                                                    </p>
+
+
+                                                    <p class="mb-2">
+
+                                                        @FormatDateTime(
+                                                            log.StartedAtUtc)
+
+                                                        @if (log.EndedAtUtc.HasValue)
+                                                        {
+                                                            <span>
+                                                                to
+                                                                @FormatDateTime(
+                                                                    log.EndedAtUtc.Value)
+                                                            </span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>
+                                                                — Active Timer
+                                                            </span>
+                                                        }
+
+                                                    </p>
+
+
+                                                    <p>
+                                                        This permanently removes
+                                                        the recorded time.
+                                                    </p>
+
+
+                                                    <div class="d-flex flex-wrap gap-2">
+
+                                                        <button type="button"
+                                                                class="btn btn-sm btn-danger"
+                                                                disabled="@isDeleting"
+                                                                @onclick="() => DeleteWorkLogAsync(log.Id)">
+
+                                                            @(isDeleting
+                                                                ? "Deleting..."
+                                                                : "Yes, Delete")
+
+                                                        </button>
+
+
+                                                        <button type="button"
+                                                                class="btn btn-sm btn-secondary"
+                                                                disabled="@isDeleting"
+                                                                @onclick="CancelDelete">
+
+                                                            Cancel
+
+                                                        </button>
+
+                                                    </div>
+
+                                                </div>
+                                            }
+                                        }
+
+                                    </td>
+
+                                </tr>
+                            }
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+            }
+
+        </div>
+
+    </div>
+}
+
+
+
+@code {
+
+    // =========================================================
+    // CURRENT USER
+    // =========================================================
+
+    private string? currentUserId;
+
+
+    private bool isAdmin;
+
+
+
+    // =========================================================
+    // DATA
+    // =========================================================
+
+    private List<WorkLog> allLogs =
+        new();
+
+
+    private List<string> projectNames =
+        new();
+
+
+    private List<MemberOption> memberOptions =
+        new();
+
+
+    private WorkLogWebsiteSummary? summary;
+
+
+
+    // =========================================================
+    // FILTERS
+    // =========================================================
+
+    private string selectedProject =
+        "";
+
+
+    private string selectedMemberId =
+        "";
+
+
+    private string selectedActivity =
+        "";
+
+
+    private string sortMode =
+        "recent";
+
+
+    private DateTime? startDate;
+
+
+    private DateTime? endDate;
+
+
+
+    // =========================================================
+    // DELETE STATE
+    // =========================================================
+
+    private int? pendingDeleteWorkLogId;
+
+
+    private bool isDeleting;
+
+
+
+    // =========================================================
+    // PAGE STATE
+    // =========================================================
+
+    private bool isLoading =
+        true;
+
+
+    private string? loadError;
+
+
+    private string? actionError;
+
+
+    private string? successMessage;
+
+
+
+    // =========================================================
+    // VISIBLE LOGS
+    // =========================================================
+
+    private List<WorkLog> VisibleLogs =>
+        GetFilteredLogs()
+            .ToList();
+
+
+
+    // =========================================================
+    // INITIAL LOAD
+    // =========================================================
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading =
+            true;
+
+
+        loadError =
+            null;
+
+
+        try
+        {
+            // -----------------------------------------------------
+            // CURRENT USER
+            // -----------------------------------------------------
+
+            AuthenticationState state =
+                await AuthenticationStateProvider
+                    .GetAuthenticationStateAsync();
+
+
+            currentUserId =
+                state.User
+
+                    .FindFirst(
+                        ClaimTypes.NameIdentifier)?
+
+                    .Value;
+
+
+            isAdmin =
+                state.User.IsInRole(
+                    AccountRoles.Admin);
+
+
+            if (string.IsNullOrWhiteSpace(
+                currentUserId))
+            {
+                loadError =
+                    "Unable to determine the currently logged-in user.";
+
+
+                return;
+            }
+
+
+            // -----------------------------------------------------
+            // LOAD PAGE DATA
+            // -----------------------------------------------------
+
+            await LoadDataAsync();
+        }
+        catch (Exception exception)
+        {
+            loadError =
+                exception.Message;
+        }
+        finally
+        {
+            isLoading =
+                false;
+        }
+    }
+
+
+
+    // =========================================================
+    // LOAD / RELOAD DATA
+    // =========================================================
+
+    private async Task LoadDataAsync()
+    {
+        if (string.IsNullOrWhiteSpace(
+            currentUserId))
+        {
+            return;
+        }
+
+
+        // -----------------------------------------------------
+        // WORK LOGS
+        // -----------------------------------------------------
+
+        allLogs =
+            await WorkLogService
+                .GetWebsiteLogsAsync();
+
+
+        // -----------------------------------------------------
+        // SUMMARY
+        // -----------------------------------------------------
+
+        summary =
+            await WorkLogService
+                .GetWebsiteSummaryAsync(
+                    currentUserId);
+
+
+        // -----------------------------------------------------
+        // PROJECT FILTER
+        // -----------------------------------------------------
+
+        List<Project> currentProjects =
+            await WorkLogService
+                .GetAllProjectsAsync();
+
+
+        projectNames =
+            currentProjects
+
+                .Select(
+                    project =>
+                        project.Name)
+
+                .Concat(
+                    allLogs.Select(
+                        log =>
+                            log.ProjectNameSnapshot))
+
+                .Where(
+                    name =>
+                        !string.IsNullOrWhiteSpace(
+                            name))
+
+                .Distinct(
+                    StringComparer.OrdinalIgnoreCase)
+
+                .OrderBy(
+                    name =>
+                        name)
+
+                .ToList();
+
+
+        // -----------------------------------------------------
+        // MEMBER FILTER
+        // -----------------------------------------------------
+
+        memberOptions =
+            allLogs
+
+                .Where(
+                    log =>
+                        log.User !=
+                        null)
+
+                .GroupBy(
+                    log =>
+                        log.UserId)
+
+                .Select(
+                    group =>
+                    {
+                        WorkLog first =
+                            group.First();
+
+
+                        return new MemberOption(
+                            group.Key,
+                            GetDisplayName(
+                                first.User));
+                    })
+
+                .OrderBy(
+                    member =>
+                        member.DisplayName)
+
+                .ToList();
+    }
+
+
+
+    // =========================================================
+    // REFRESH
+    // =========================================================
+
+    private async Task RefreshAsync()
+    {
+        ClearActionMessages();
+
+
+        pendingDeleteWorkLogId =
+            null;
+
+
+        try
+        {
+            await LoadDataAsync();
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                $"The time records could not be refreshed: {exception.Message}";
+        }
+    }
+
+
+
+    // =========================================================
+    // SHOW DELETE CONFIRMATION
+    // =========================================================
+
+    private void ShowDeleteConfirmation(
+        int workLogId)
+    {
+        ClearActionMessages();
+
+
+        pendingDeleteWorkLogId =
+            workLogId;
+    }
+
+
+
+    // =========================================================
+    // CANCEL DELETE
+    // =========================================================
+
+    private void CancelDelete()
+    {
+        pendingDeleteWorkLogId =
+            null;
+    }
+
+
+
+    // =========================================================
+    // DELETE WORK LOG
+    // =========================================================
+
+    private async Task DeleteWorkLogAsync(
+        int workLogId)
+    {
+        if (string.IsNullOrWhiteSpace(
+            currentUserId))
+        {
+            return;
+        }
+
+
+        isDeleting =
+            true;
+
+
+        ClearActionMessages();
+
+
+        try
+        {
+            await WorkLogService
+                .DeleteWorkLogAsync(
+                    workLogId,
+                    currentUserId,
+                    isAdmin);
+
+
+            pendingDeleteWorkLogId =
+                null;
+
+
+            successMessage =
+                "The time record was deleted successfully.";
+
+
+            // Reload all records and totals immediately.
+            await LoadDataAsync();
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            actionError =
+                exception.Message;
+        }
+        catch (InvalidOperationException exception)
+        {
+            actionError =
+                exception.Message;
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                $"The time record could not be deleted: {exception.Message}";
+        }
+        finally
+        {
+            isDeleting =
+                false;
+        }
+    }
+
+
+
+    // =========================================================
+    // FILTER LOGS
+    // =========================================================
+
+    private IEnumerable<WorkLog>
+        GetFilteredLogs()
+    {
+        IEnumerable<WorkLog> logs =
+            allLogs;
+
+
+        // -----------------------------------------------------
+        // PROJECT
+        // -----------------------------------------------------
+
+        if (!string.IsNullOrWhiteSpace(
+            selectedProject))
+        {
+            logs =
+                logs.Where(
+                    log =>
+                        string.Equals(
+                            log.ProjectNameSnapshot,
+                            selectedProject,
+                            StringComparison.OrdinalIgnoreCase));
+        }
+
+
+        // -----------------------------------------------------
+        // MEMBER
+        // -----------------------------------------------------
+
+        if (!string.IsNullOrWhiteSpace(
+            selectedMemberId))
+        {
+            logs =
+                logs.Where(
+                    log =>
+                        log.UserId ==
+                        selectedMemberId);
+        }
+
+
+        // -----------------------------------------------------
+        // ACTIVITY
+        // -----------------------------------------------------
+
+        if (!string.IsNullOrWhiteSpace(
+                selectedActivity) &&
+            Enum.TryParse(
+                selectedActivity,
+                out WorkActivity activity))
+        {
+            logs =
+                logs.Where(
+                    log =>
+                        log.Activity ==
+                        activity);
+        }
+
+
+        // -----------------------------------------------------
+        // FROM DATE
+        // -----------------------------------------------------
+
+        if (startDate.HasValue)
+        {
+            DateTime minimum =
+                startDate.Value.Date;
+
+
+            logs =
+                logs.Where(
+                    log =>
+                        log.StartedAtUtc
+                            .ToLocalTime()
+                            .Date >=
+                        minimum);
+        }
+
+
+        // -----------------------------------------------------
+        // THROUGH DATE
+        // -----------------------------------------------------
+
+        if (endDate.HasValue)
+        {
+            DateTime maximum =
+                endDate.Value.Date;
+
+
+            logs =
+                logs.Where(
+                    log =>
+                        log.StartedAtUtc
+                            .ToLocalTime()
+                            .Date <=
+                        maximum);
+        }
+
+
+        // -----------------------------------------------------
+        // SORT
+        // -----------------------------------------------------
+
+        logs =
+            sortMode switch
+            {
+                "oldest" =>
+                    logs.OrderBy(
+                        log =>
+                            log.StartedAtUtc),
+
+                "longest" =>
+                    logs.OrderByDescending(
+                        log =>
+                            GetDuration(
+                                log)),
+
+                "shortest" =>
+                    logs.OrderBy(
+                        log =>
+                            GetDuration(
+                                log)),
+
+                "member" =>
+                    logs.OrderBy(
+                        log =>
+                            GetDisplayName(
+                                log.User)),
+
+                "project" =>
+                    logs.OrderBy(
+                        log =>
+                            log.ProjectNameSnapshot),
+
+                _ =>
+                    logs.OrderByDescending(
+                        log =>
+                            log.StartedAtUtc)
+            };
+
+
+        return logs;
+    }
+
+
+
+    // =========================================================
+    // CLEAR FILTERS
+    // =========================================================
+
+    private void ClearFilters()
+    {
+        selectedProject =
+            "";
+
+
+        selectedMemberId =
+            "";
+
+
+        selectedActivity =
+            "";
+
+
+        sortMode =
+            "recent";
+
+
+        startDate =
+            null;
+
+
+        endDate =
+            null;
+
+
+        pendingDeleteWorkLogId =
+            null;
+
+
+        ClearActionMessages();
+    }
+
+
+
+    // =========================================================
+    // EDIT / DELETE PERMISSION
+    // =========================================================
+
+    private bool CanManage(
+        WorkLog log)
+    {
+        // Admin can edit/delete every record.
+        if (isAdmin)
+        {
+            return true;
+        }
+
+
+        // Everyone else can edit/delete only their own record.
+        return log.UserId ==
+            currentUserId;
+    }
+
+
+
+    // =========================================================
+    // DURATION
+    // =========================================================
+
+    private static TimeSpan GetDuration(
+        WorkLog log)
+    {
+        DateTimeOffset end =
+            log.EndedAtUtc ??
+            DateTimeOffset.UtcNow;
+
+
+        TimeSpan duration =
+            end -
+            log.StartedAtUtc;
+
+
+        if (duration <
+            TimeSpan.Zero)
+        {
+            return TimeSpan.Zero;
+        }
+
+
+        return duration;
+    }
+
+
+
+    // =========================================================
+    // TOTAL COMPLETED TIME
+    // =========================================================
+
+    private static TimeSpan CalculateCompletedTime(
+        IEnumerable<WorkLog> logs)
+    {
+        TimeSpan total =
+            TimeSpan.Zero;
+
+
+        foreach (
+            WorkLog log
+            in logs)
+        {
+            if (!log.EndedAtUtc.HasValue)
+            {
+                continue;
+            }
+
+
+            TimeSpan duration =
+                log.EndedAtUtc.Value -
+                log.StartedAtUtc;
+
+
+            if (duration >
+                TimeSpan.Zero)
+            {
+                total +=
+                    duration;
+            }
+        }
+
+
+        return total;
+    }
+
+
+
+    // =========================================================
+    // FORMAT DURATION
+    // =========================================================
+
+    private static string FormatDuration(
+        TimeSpan duration)
+    {
+        if (duration <
+            TimeSpan.Zero)
+        {
+            duration =
+                TimeSpan.Zero;
+        }
+
+
+        int hours =
+            (int)Math.Floor(
+                duration.TotalHours);
+
+
+        return
+            $"{hours}h {duration.Minutes:D2}m";
+    }
+
+
+
+    // =========================================================
+    // FORMAT DATE / TIME
+    // =========================================================
+
+    private static string FormatDateTime(
+        DateTimeOffset time)
+    {
+        return time
+            .ToLocalTime()
+            .ToString(
+                "MMM d, yyyy h:mm tt");
+    }
+
+
+
+    // =========================================================
+    // DISPLAY NAME
+    // =========================================================
+
+    private static string GetDisplayName(
+        ApplicationUser? user)
+    {
+        if (user == null)
+        {
+            return "Unknown User";
+        }
+
+
+        string name =
+            $"{user.FirstName} {user.LastName}"
+                .Trim();
+
+
+        if (!string.IsNullOrWhiteSpace(
+            name))
+        {
+            return name;
+        }
+
+
+        return user.Email ??
+            "Unknown User";
+    }
+
+
+
+    // =========================================================
+    // CLEAR ACTION MESSAGES
+    // =========================================================
+
+    private void ClearActionMessages()
+    {
+        successMessage =
+            null;
+
+
+        actionError =
+            null;
+    }
+
+
+
+    // =========================================================
+    // MEMBER OPTION
+    // =========================================================
+
+    private sealed record MemberOption(
+        string UserId,
+        string DisplayName);
+}

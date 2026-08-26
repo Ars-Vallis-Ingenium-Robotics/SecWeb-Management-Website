@@ -1,0 +1,278 @@
+@using Microsoft.AspNetCore.Components.Web
+@using SecWeb.Components.Account
+
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+    <meta charset="utf-8" />
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0" />
+
+    <base href="/" />
+
+
+    @* =========================================================
+       COOKIE CONSENT CHECK
+       =========================================================
+
+       This runs BEFORE the page is displayed.
+
+       If the user has previously accepted cookies, a class is
+       immediately placed on the <html> element so the banner
+       never becomes visible.
+       ========================================================= *@
+
+    <script>
+            (function() {
+
+                const storageName =
+                    "SecWeb.CookieConsent";
+
+
+                let accepted =
+                    false;
+
+
+                // -----------------------------------------------------
+                // CHECK LOCAL STORAGE
+                // -----------------------------------------------------
+
+                try {
+
+                    accepted =
+                        localStorage.getItem(
+                            storageName) ===
+                        "accepted";
+
+                }
+                catch {
+
+                    // Some browsers may disable localStorage.
+                }
+
+
+                // -----------------------------------------------------
+                // CHECK COOKIE AS FALLBACK
+                // -----------------------------------------------------
+
+                if (!accepted) {
+
+                    accepted =
+                        document.cookie
+                            .split(";")
+                            .some(
+                                cookie =>
+                                    cookie.trim() ===
+                                    storageName +
+                                    "=accepted"
+                            );
+
+                }
+
+
+                // -----------------------------------------------------
+                // HIDE BANNER BEFORE PAGE DISPLAY
+                // -----------------------------------------------------
+
+                if (accepted) {
+
+                    document.documentElement
+                        .classList
+                        .add(
+                            "secweb-cookie-consent-accepted"
+                        );
+
+                }
+
+            })();
+    </script>
+
+
+    @* =========================================================
+       BOOTSTRAP
+       ========================================================= *@
+
+    <link rel="stylesheet"
+          href="lib/bootstrap/dist/css/bootstrap.min.css" />
+
+
+    @* =========================================================
+       SECWEB STYLES
+       ========================================================= *@
+
+    <link rel="stylesheet"
+          href="app.css" />
+
+
+    <link rel="stylesheet"
+          href="SecWeb.styles.css" />
+
+
+    @* =========================================================
+       IMPORT MAP / ICON
+       ========================================================= *@
+
+    <ImportMap />
+
+
+    <link rel="icon"
+          type="image/png"
+          href="favicon.png" />
+
+
+    @* =========================================================
+       PAGE HEAD
+       ========================================================= *@
+
+    <HeadOutlet @rendermode="RenderModeForPage" />
+
+</head>
+
+
+<body>
+
+
+    @* =========================================================
+       SECWEB ROUTES
+       ========================================================= *@
+
+    <Routes @rendermode="RenderModeForPage" />
+
+
+    @* =========================================================
+       COOKIE CONSENT FUNCTIONS
+       ========================================================= *@
+
+    <script>
+
+            // =========================================================
+            // ACCEPT COOKIES
+            // =========================================================
+
+            window.acceptSecWebCookies =
+                function() {
+
+                    const storageName =
+                        "SecWeb.CookieConsent";
+
+
+                    // -------------------------------------------------
+                    // SAVE TO LOCAL STORAGE
+                    // -------------------------------------------------
+
+                    try {
+
+                        localStorage.setItem(
+                            storageName,
+                            "accepted"
+                        );
+
+                    }
+                    catch {
+
+                        // Continue even if localStorage is unavailable.
+                    }
+
+
+                    // -------------------------------------------------
+                    // SAVE PERSISTENT COOKIE
+                    // -------------------------------------------------
+                    //
+                    // Max-Age:
+                    //
+                    // 31,536,000 seconds = 365 days
+                    //
+
+                    let cookie =
+                        storageName +
+                        "=accepted" +
+                        "; Max-Age=31536000" +
+                        "; Path=/" +
+                        "; SameSite=Lax";
+
+
+                    if (
+                        window.location.protocol ===
+                        "https:"
+                    ) {
+
+                        cookie +=
+                            "; Secure";
+
+                    }
+
+
+                    document.cookie =
+                        cookie;
+
+
+                    // -------------------------------------------------
+                    // HIDE BANNER
+                    // -------------------------------------------------
+
+                    document.documentElement
+                        .classList
+                        .add(
+                            "secweb-cookie-consent-accepted"
+                        );
+
+
+                    const banner =
+                        document.getElementById(
+                            "secweb-cookie-consent"
+                        );
+
+
+                    if (banner) {
+
+                        banner.style.display =
+                            "none";
+
+                    }
+                };
+
+    </script>
+
+
+    @* =========================================================
+       BLAZOR
+       ========================================================= *@
+
+    <script src="_framework/blazor.web.js"></script>
+
+</body>
+
+</html>
+
+
+@code {
+
+    // =========================================================
+    // RENDER MODE
+    // =========================================================
+    //
+    // Normal SecWeb pages:
+    //     Interactive Server
+    //
+    // Identity pages such as Login/Register:
+    //     Static server rendering
+    //
+    // This is important because the Identity pages use
+    // ExcludeFromInteractiveRouting.
+    // =========================================================
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+
+    private IComponentRenderMode? RenderModeForPage =>
+        HttpContext.AcceptsInteractiveRouting()
+
+            ? InteractiveServer
+
+            : null;
+}

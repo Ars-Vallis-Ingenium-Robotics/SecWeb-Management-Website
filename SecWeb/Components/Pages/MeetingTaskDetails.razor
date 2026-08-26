@@ -1,0 +1,1251 @@
+﻿@page "/meetings/{MeetingId:int}/tasks/{TaskId:int}"
+
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using SecWeb.Data
+@using SecWeb.Data.Models
+@using SecWeb.Services
+
+@attribute [Authorize]
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject MeetingService MeetingService
+@inject NavigationManager Navigation
+
+<PageTitle>Meeting Task</PageTitle>
+
+
+@if (isLoading)
+{
+    <p>
+        <em>Loading task...</em>
+    </p>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <div class="alert alert-danger">
+        @loadError
+    </div>
+
+
+    <button type="button"
+            class="btn btn-secondary"
+            @onclick="BackToMeeting">
+
+        Back to Meeting
+
+    </button>
+}
+else if (meeting != null &&
+         taskList != null &&
+         task != null)
+{
+    @* =========================================================
+       PAGE HEADER
+       ========================================================= *@
+
+    <div class="d-flex justify-content-between align-items-start mb-4">
+
+        <div>
+
+            <h1>
+                @task.Name
+            </h1>
+
+
+            <p class="mb-1">
+
+                <strong>
+                    Meeting:
+                </strong>
+
+                @meeting.Title
+
+            </p>
+
+
+            @if (meeting.Team?.Project != null)
+            {
+                <p class="mb-1">
+
+                    <strong>
+                        Project:
+                    </strong>
+
+                    @meeting.Team.Project.Name
+
+                </p>
+
+
+                <p class="mb-0">
+
+                    <strong>
+                        Team / Subsystem:
+                    </strong>
+
+                    @meeting.Team.Name
+
+                </p>
+            }
+
+        </div>
+
+
+        <button type="button"
+                class="btn btn-outline-secondary"
+                @onclick="BackToMeeting">
+
+            Back to Meeting
+
+        </button>
+
+    </div>
+
+
+    @* =========================================================
+       MESSAGES
+       ========================================================= *@
+
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <div class="alert alert-success">
+            @successMessage
+        </div>
+    }
+
+
+    @if (!string.IsNullOrWhiteSpace(actionError))
+    {
+        <div class="alert alert-danger">
+            @actionError
+        </div>
+    }
+
+
+    @* =========================================================
+       TASK
+       ========================================================= *@
+
+    <div class="card mb-4">
+
+        <div class="card-header d-flex justify-content-between align-items-center">
+
+            <strong>
+
+                Task for:
+                @GetDisplayName(taskList.AssignedUser)
+
+            </strong>
+
+
+            @if (task.SubmittedAtUtc.HasValue)
+            {
+                <span class="badge text-bg-success">
+
+                    Submitted
+
+                </span>
+            }
+            else
+            {
+                <span class="badge text-bg-secondary">
+
+                    Not Submitted
+
+                </span>
+            }
+
+        </div>
+
+
+        <div class="card-body">
+
+            @* =================================================
+               TASK INFORMATION
+               ================================================= *@
+
+            @if (canManageMeeting)
+            {
+                @* =============================================
+                   LEAD / ADMIN EDITING VIEW
+                   ============================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Task Name
+                    </label>
+
+
+                    <input class="form-control"
+                           @bind="taskName" />
+
+                </div>
+
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Task Details
+                    </label>
+
+
+                    <textarea class="form-control"
+                              rows="7"
+                              @bind="taskDetails"></textarea>
+
+                </div>
+            }
+            else
+            {
+                @* =============================================
+                   MEMBER VIEW
+                   ============================================= *@
+
+                <h4>
+                    @task.Name
+                </h4>
+
+
+                @if (!string.IsNullOrWhiteSpace(
+                    task.Details))
+                {
+                    <p style="white-space: pre-wrap;">
+
+                        @task.Details
+
+                    </p>
+                }
+                else
+                {
+                    <p class="text-secondary">
+
+                        No additional task details were provided.
+
+                    </p>
+                }
+            }
+
+
+            <hr />
+
+
+            @* =================================================
+               LEAD FILE
+               ================================================= *@
+
+            <h5>
+                Lead File
+            </h5>
+
+
+            @if (LeadAttachment != null)
+            {
+                <p>
+
+                    <a class="btn btn-sm btn-outline-primary"
+                       href="@GetFileDownloadUrl(LeadAttachment.Id)">
+
+                        Download @LeadAttachment.OriginalFileName
+
+                    </a>
+
+
+                    <span class="text-secondary ms-2">
+
+                        (@FormatFileSize(
+                                                    LeadAttachment.SizeBytes))
+
+                    </span>
+
+                </p>
+            }
+            else
+            {
+                <p class="text-secondary">
+
+                    No file was attached by the Lead.
+
+                </p>
+            }
+
+
+            @* =================================================
+               LEAD FILE MANAGEMENT
+               ================================================= *@
+
+            @if (canManageMeeting)
+            {
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Replace Lead File
+                    </label>
+
+
+                    <InputFile class="form-control"
+                               OnChange="HandleLeadAttachment" />
+
+
+                    <div class="form-text">
+
+                        Any file type is allowed up to
+                        @MeetingFileStorageService.FormatMaximumSize().
+
+                    </div>
+
+                </div>
+
+
+                @if (LeadAttachment != null)
+                {
+                    <div class="form-check mb-3">
+
+                        <input id="removeLeadAttachment"
+                               class="form-check-input"
+                               type="checkbox"
+                               @bind="removeLeadAttachment" />
+
+
+                        <label class="form-check-label"
+                               for="removeLeadAttachment">
+
+                            Remove the current Lead file
+
+                        </label>
+
+                    </div>
+                }
+
+
+                <div class="d-flex flex-wrap gap-2 mb-4">
+
+                    <button type="button"
+                            class="btn btn-primary"
+                            disabled="@isActionRunning"
+                            @onclick="SaveTaskAsync">
+
+                        @(isActionRunning
+                            ? "Saving..."
+                            : "Save Task Changes")
+
+                    </button>
+
+
+                    <button type="button"
+                            class="btn btn-outline-danger"
+                            disabled="@isActionRunning"
+                            @onclick="ShowDeleteConfirmation">
+
+                        Delete Task
+
+                    </button>
+
+                </div>
+
+
+                @if (showDeleteConfirmation)
+                {
+                    <div class="alert alert-danger">
+
+                        <strong>
+                            Delete this task?
+                        </strong>
+
+
+                        <p class="mt-2">
+
+                            The Lead file and member submission
+                            file will also be deleted.
+
+                        </p>
+
+
+                        <div class="d-flex gap-2">
+
+                            <button type="button"
+                                    class="btn btn-sm btn-danger"
+                                    disabled="@isActionRunning"
+                                    @onclick="DeleteTaskAsync">
+
+                                Yes, Delete Task
+
+                            </button>
+
+
+                            <button type="button"
+                                    class="btn btn-sm btn-secondary"
+                                    disabled="@isActionRunning"
+                                    @onclick="CancelDelete">
+
+                                Cancel
+
+                            </button>
+
+                        </div>
+
+                    </div>
+                }
+            }
+
+
+            <hr />
+
+
+            @* =================================================
+               MEMBER SUBMISSION
+               ================================================= *@
+
+            <div class="d-flex justify-content-between align-items-center">
+
+                <h5 class="mb-0">
+                    Member Submission
+                </h5>
+
+
+                @if (task.SubmittedAtUtc.HasValue)
+                {
+                    <small class="text-secondary">
+
+                        Submitted
+                        @FormatDateTime(
+                            task.SubmittedAtUtc.Value)
+
+                    </small>
+                }
+
+            </div>
+
+
+            @* =================================================
+               SUBMISSION DETAILS
+               ================================================= *@
+
+            @if (CanViewSubmissionDetails)
+            {
+                @if (!string.IsNullOrWhiteSpace(
+                    task.SubmissionComments))
+                {
+                    <div class="mt-3">
+
+                        <strong>
+                            Comments
+                        </strong>
+
+
+                        <p style="white-space: pre-wrap;">
+
+                            @task.SubmissionComments
+
+                        </p>
+
+                    </div>
+                }
+
+
+                @if (SubmissionFile != null)
+                {
+                    <p>
+
+                        <a class="btn btn-sm btn-outline-success"
+                           href="@GetFileDownloadUrl(SubmissionFile.Id)">
+
+                            Download Submission:
+                            @SubmissionFile.OriginalFileName
+
+                        </a>
+
+
+                        <span class="text-secondary ms-2">
+
+                            (@FormatFileSize(
+                                                            SubmissionFile.SizeBytes))
+
+                        </span>
+
+                    </p>
+                }
+                else if (task.SubmittedAtUtc.HasValue)
+                {
+                    <p class="text-secondary">
+
+                        This submission does not contain a file.
+
+                    </p>
+                }
+                else
+                {
+                    <p class="text-secondary mt-3">
+
+                        Nothing has been submitted yet.
+
+                    </p>
+                }
+            }
+            else if (task.SubmittedAtUtc.HasValue)
+            {
+                <p class="text-secondary mt-3">
+
+                    This task has been submitted.
+
+                    Submission comments and files are visible only
+                    to the assigned member, the team Lead, and Admins.
+
+                </p>
+            }
+            else
+            {
+                <p class="text-secondary mt-3">
+
+                    Nothing has been submitted yet.
+
+                </p>
+            }
+
+
+            @* =================================================
+               ASSIGNED MEMBER SUBMISSION FORM
+               ================================================= *@
+
+            @if (CanSubmitTask)
+            {
+                <div class="border rounded p-3 mt-4">
+
+                    <h5>
+
+                        @(task.SubmittedAtUtc.HasValue
+                            ? "Update Your Submission"
+                            : "Submit Your Work")
+
+                    </h5>
+
+
+                    <div class="mb-3">
+
+                        <label class="form-label">
+                            Comments for the Lead
+                        </label>
+
+
+                        <textarea class="form-control"
+                                  rows="5"
+                                  @bind="submissionComments"></textarea>
+
+                    </div>
+
+
+                    <div class="mb-3">
+
+                        <label class="form-label">
+                            Submission File
+                        </label>
+
+
+                        <InputFile class="form-control"
+                                   OnChange="HandleSubmissionFile" />
+
+
+                        <div class="form-text">
+
+                            Any file type is allowed up to
+                            @MeetingFileStorageService.FormatMaximumSize().
+
+                            If a file was already submitted,
+                            selecting a new file replaces it.
+
+                        </div>
+
+                    </div>
+
+
+                    <button type="button"
+                            class="btn btn-success"
+                            disabled="@isActionRunning"
+                            @onclick="SubmitTaskAsync">
+
+                        @if (isActionRunning)
+                        {
+                            <span>
+                                Saving...
+                            </span>
+                        }
+                        else if (task.SubmittedAtUtc.HasValue)
+                        {
+                            <span>
+                                Update Submission
+                            </span>
+                        }
+                        else
+                        {
+                            <span>
+                                Submit Task
+                            </span>
+                        }
+
+                    </button>
+
+                </div>
+            }
+
+        </div>
+
+    </div>
+}
+
+
+@code {
+
+    // =========================================================
+    // ROUTE PARAMETERS
+    // =========================================================
+
+    [Parameter]
+    public int MeetingId { get; set; }
+
+
+    [Parameter]
+    public int TaskId { get; set; }
+
+
+    // =========================================================
+    // CURRENT USER
+    // =========================================================
+
+    private string? currentUserId;
+
+
+    private bool isAdmin;
+
+
+    private bool canManageMeeting;
+
+
+    // =========================================================
+    // DATA
+    // =========================================================
+
+    private Meeting? meeting;
+
+
+    private MeetingTaskList? taskList;
+
+
+    private MeetingTask? task;
+
+
+    // =========================================================
+    // FILES
+    // =========================================================
+
+    private MeetingTaskFile? LeadAttachment =>
+        task?.Files
+
+            .FirstOrDefault(
+                file =>
+                    file.Kind ==
+                        MeetingTaskFileKind.LeadAttachment);
+
+
+    private MeetingTaskFile? SubmissionFile =>
+        task?.Files
+
+            .FirstOrDefault(
+                file =>
+                    file.Kind ==
+                        MeetingTaskFileKind.Submission);
+
+
+    // =========================================================
+    // PERMISSIONS
+    // =========================================================
+    //
+    // Only the person assigned the task can submit work.
+    // =========================================================
+
+    private bool CanSubmitTask =>
+        taskList != null &&
+        currentUserId != null &&
+        taskList.AssignedUserId ==
+            currentUserId;
+
+
+    // =========================================================
+    // SUBMISSION VISIBILITY
+    // =========================================================
+    //
+    // Submission details are visible to:
+    //
+    // - assigned member
+    // - team Lead
+    // - Admin
+    //
+    // Other team members can still view the task itself.
+    // =========================================================
+
+    private bool CanViewSubmissionDetails =>
+        taskList != null &&
+        currentUserId != null &&
+        (
+            canManageMeeting ||
+
+            taskList.AssignedUserId ==
+                currentUserId
+        );
+
+
+    // =========================================================
+    // TASK EDIT STATE
+    // =========================================================
+
+    private string taskName =
+        string.Empty;
+
+
+    private string taskDetails =
+        string.Empty;
+
+
+    private IBrowserFile? replacementLeadAttachment;
+
+
+    private bool removeLeadAttachment;
+
+
+    // =========================================================
+    // SUBMISSION STATE
+    // =========================================================
+
+    private string submissionComments =
+        string.Empty;
+
+
+    private IBrowserFile? submissionFile;
+
+
+    // =========================================================
+    // PAGE STATE
+    // =========================================================
+
+    private bool isLoading =
+        true;
+
+
+    private bool isActionRunning;
+
+
+    private bool showDeleteConfirmation;
+
+
+    private string? loadError;
+
+
+    private string? actionError;
+
+
+    private string? successMessage;
+
+
+    // =========================================================
+    // LOAD PAGE
+    // =========================================================
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading =
+            true;
+
+
+        loadError =
+            null;
+
+
+        try
+        {
+            AuthenticationState state =
+                await AuthenticationStateProvider
+                    .GetAuthenticationStateAsync();
+
+
+            currentUserId =
+                state.User
+
+                    .FindFirst(
+                        ClaimTypes.NameIdentifier)?
+
+                    .Value;
+
+
+            isAdmin =
+                state.User.IsInRole(
+                    AccountRoles.Admin);
+
+
+            if (string.IsNullOrWhiteSpace(
+                currentUserId))
+            {
+                loadError =
+                    "Unable to determine the currently logged-in user.";
+
+
+                return;
+            }
+
+
+            await LoadTaskAsync();
+        }
+        catch (Exception exception)
+        {
+            loadError =
+                $"The task could not be loaded: {exception.Message}";
+        }
+        finally
+        {
+            isLoading =
+                false;
+        }
+    }
+
+
+    // =========================================================
+    // LOAD TASK
+    // =========================================================
+
+    private async Task LoadTaskAsync()
+    {
+        if (string.IsNullOrWhiteSpace(
+            currentUserId))
+        {
+            return;
+        }
+
+
+        meeting =
+            await MeetingService
+                .GetMeetingAsync(
+                    MeetingId,
+                    currentUserId,
+                    isAdmin);
+
+
+        if (meeting == null)
+        {
+            loadError =
+                "This meeting does not exist or you do not have permission to view it.";
+
+
+            taskList =
+                null;
+
+
+            task =
+                null;
+
+
+            return;
+        }
+
+
+        taskList =
+            meeting.TaskLists
+
+                .FirstOrDefault(
+                    list =>
+
+                        list.Tasks.Any(
+                            item =>
+                                item.Id ==
+                                    TaskId));
+
+
+        task =
+            taskList?.Tasks
+
+                .FirstOrDefault(
+                    item =>
+                        item.Id ==
+                            TaskId);
+
+
+        if (taskList == null ||
+            task == null)
+        {
+            loadError =
+                "This task does not exist in the selected meeting.";
+
+
+            return;
+        }
+
+
+        canManageMeeting =
+            await MeetingService
+                .CanManageMeetingAsync(
+                    MeetingId,
+                    currentUserId,
+                    isAdmin);
+
+
+        InitializeFormState();
+    }
+
+
+    // =========================================================
+    // INITIALIZE FORM
+    // =========================================================
+
+    private void InitializeFormState()
+    {
+        if (task == null)
+        {
+            return;
+        }
+
+
+        taskName =
+            task.Name;
+
+
+        taskDetails =
+            task.Details ??
+            string.Empty;
+
+
+        replacementLeadAttachment =
+            null;
+
+
+        removeLeadAttachment =
+            false;
+
+
+        submissionComments =
+            task.SubmissionComments ??
+            string.Empty;
+
+
+        submissionFile =
+            null;
+
+
+        showDeleteConfirmation =
+            false;
+    }
+
+
+    // =========================================================
+    // LEAD FILE
+    // =========================================================
+
+    private void HandleLeadAttachment(
+        InputFileChangeEventArgs args)
+    {
+        replacementLeadAttachment =
+            args.File;
+
+
+        if (replacementLeadAttachment != null)
+        {
+            removeLeadAttachment =
+                false;
+        }
+    }
+
+
+    // =========================================================
+    // SAVE TASK CHANGES
+    // =========================================================
+
+    private async Task SaveTaskAsync()
+    {
+        if (!canManageMeeting ||
+            task == null ||
+            string.IsNullOrWhiteSpace(
+                currentUserId) ||
+            isActionRunning)
+        {
+            return;
+        }
+
+
+        ClearMessages();
+
+
+        isActionRunning =
+            true;
+
+
+        try
+        {
+            await MeetingService
+                .UpdateTaskAsync(
+                    task.Id,
+                    taskName,
+                    taskDetails,
+                    replacementLeadAttachment,
+                    removeLeadAttachment,
+                    currentUserId,
+                    isAdmin);
+
+
+            successMessage =
+                "The task was updated.";
+
+
+            await LoadTaskAsync();
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                exception.Message;
+        }
+        finally
+        {
+            isActionRunning =
+                false;
+        }
+    }
+
+
+    // =========================================================
+    // DELETE TASK
+    // =========================================================
+
+    private void ShowDeleteConfirmation()
+    {
+        showDeleteConfirmation =
+            true;
+    }
+
+
+    private void CancelDelete()
+    {
+        showDeleteConfirmation =
+            false;
+    }
+
+
+    private async Task DeleteTaskAsync()
+    {
+        if (!canManageMeeting ||
+            task == null ||
+            string.IsNullOrWhiteSpace(
+                currentUserId) ||
+            isActionRunning)
+        {
+            return;
+        }
+
+
+        ClearMessages();
+
+
+        isActionRunning =
+            true;
+
+
+        try
+        {
+            await MeetingService
+                .DeleteTaskAsync(
+                    task.Id,
+                    currentUserId,
+                    isAdmin);
+
+
+            Navigation.NavigateTo(
+                $"/meetings/{MeetingId}");
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                exception.Message;
+
+
+            showDeleteConfirmation =
+                false;
+        }
+        finally
+        {
+            isActionRunning =
+                false;
+        }
+    }
+
+
+    // =========================================================
+    // SUBMISSION FILE
+    // =========================================================
+
+    private void HandleSubmissionFile(
+        InputFileChangeEventArgs args)
+    {
+        submissionFile =
+            args.File;
+    }
+
+
+    // =========================================================
+    // SUBMIT / UPDATE MEMBER WORK
+    // =========================================================
+
+    private async Task SubmitTaskAsync()
+    {
+        if (!CanSubmitTask ||
+            task == null ||
+            string.IsNullOrWhiteSpace(
+                currentUserId) ||
+            isActionRunning)
+        {
+            return;
+        }
+
+
+        ClearMessages();
+
+
+        isActionRunning =
+            true;
+
+
+        try
+        {
+            await MeetingService
+                .SubmitTaskAsync(
+                    task.Id,
+                    currentUserId,
+                    submissionComments,
+                    submissionFile);
+
+
+            successMessage =
+                "Your task submission was saved.";
+
+
+            await LoadTaskAsync();
+        }
+        catch (Exception exception)
+        {
+            actionError =
+                exception.Message;
+        }
+        finally
+        {
+            isActionRunning =
+                false;
+        }
+    }
+
+
+    // =========================================================
+    // USER DISPLAY NAME
+    // =========================================================
+
+    private static string GetDisplayName(
+        ApplicationUser? user)
+    {
+        if (user == null)
+        {
+            return "Unknown User";
+        }
+
+
+        string fullName =
+            $"{user.FirstName} {user.LastName}"
+                .Trim();
+
+
+        if (!string.IsNullOrWhiteSpace(
+            fullName))
+        {
+            return fullName;
+        }
+
+
+        return user.Email ??
+            "Unknown User";
+    }
+
+
+    // =========================================================
+    // FILE DOWNLOAD URL
+    // =========================================================
+
+    private static string GetFileDownloadUrl(
+        int fileId)
+    {
+        return
+            $"/meeting-task-files/{fileId}";
+    }
+
+
+    // =========================================================
+    // FILE SIZE
+    // =========================================================
+
+    private static string FormatFileSize(
+        long bytes)
+    {
+        if (bytes >=
+            1024L * 1024L)
+        {
+            return
+                $"{bytes / 1024d / 1024d:0.##} MB";
+        }
+
+
+        if (bytes >=
+            1024L)
+        {
+            return
+                $"{bytes / 1024d:0.##} KB";
+        }
+
+
+        return
+            $"{bytes} bytes";
+    }
+
+
+    // =========================================================
+    // DATE / TIME
+    // =========================================================
+
+    private static string FormatDateTime(
+        DateTimeOffset time)
+    {
+        return time
+
+            .ToLocalTime()
+
+            .ToString(
+                "MMM d, yyyy h:mm tt");
+    }
+
+
+    // =========================================================
+    // MESSAGES
+    // =========================================================
+
+    private void ClearMessages()
+    {
+        successMessage =
+            null;
+
+
+        actionError =
+            null;
+    }
+
+
+    // =========================================================
+    // BACK TO MEETING
+    // =========================================================
+
+    private void BackToMeeting()
+    {
+        Navigation.NavigateTo(
+            $"/meetings/{MeetingId}");
+    }
+}

@@ -1,0 +1,619 @@
+﻿@page "/time/edit/{Id:int}"
+
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using SecWeb.Data
+@using SecWeb.Data.Models
+@using SecWeb.Services
+
+@attribute [Authorize]
+
+@inject WorkLogService WorkLogService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Edit Work Log</PageTitle>
+
+
+@if (isLoading)
+{
+    <p>
+        <em>Loading work log...</em>
+    </p>
+}
+else if (!string.IsNullOrWhiteSpace(errorMessage) &&
+         workLog == null)
+{
+    <div class="alert alert-danger">
+        @errorMessage
+    </div>
+
+
+    <a class="btn btn-secondary"
+       href="/time">
+
+        Back to Time Tracking
+
+    </a>
+}
+else if (workLog != null)
+{
+    <h1>Edit Work Log</h1>
+
+
+    <p>
+        Adjust the project, activity, starting time,
+        or ending time for this work record.
+    </p>
+
+
+    @if (isAdmin)
+    {
+        <div class="alert alert-secondary">
+
+            <strong>Member:</strong>
+
+            @GetDisplayName(
+                workLog.User)
+
+        </div>
+    }
+
+
+    @if (!string.IsNullOrWhiteSpace(
+        errorMessage))
+    {
+        <div class="alert alert-danger">
+            @errorMessage
+        </div>
+    }
+
+
+    <div class="card">
+
+        <div class="card-header">
+            <strong>Time Record</strong>
+        </div>
+
+
+        <div class="card-body">
+
+            <EditForm Model="@editModel"
+                      OnSubmit="SaveAsync"
+                      FormName="edit-work-log">
+
+                @* =============================================
+                   PROJECT
+                   ============================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Project / Team
+                    </label>
+
+
+                    <InputSelect class="form-select"
+                                 @bind-Value="editModel.ProjectId">
+
+                        @if (!workLog.ProjectId.HasValue)
+                        {
+                            <option value="">
+                                Historical: @workLog.ProjectNameSnapshot
+                            </option>
+                        }
+
+
+                        @foreach (
+                            Project project
+                            in availableProjects)
+                        {
+                            <option value="@project.Id">
+                                @project.Name
+                            </option>
+                        }
+
+                    </InputSelect>
+
+                </div>
+
+
+                @* =============================================
+                   ACTIVITY
+                   ============================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Activity
+                    </label>
+
+
+                    <InputSelect class="form-select"
+                                 @bind-Value="editModel.Activity">
+
+                        <option value="@WorkActivity.Meeting">
+                            Meeting
+                        </option>
+
+                        <option value="@WorkActivity.Booth">
+                            Booth
+                        </option>
+
+                        <option value="@WorkActivity.Working">
+                            Working
+                        </option>
+
+                        <option value="@WorkActivity.Volunteering">
+                            Volunteering
+                        </option>
+
+                    </InputSelect>
+
+                </div>
+
+
+                @* =============================================
+                   START TIME
+                   ============================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Started
+                    </label>
+
+
+                    <input type="datetime-local"
+                           class="form-control"
+                           @bind="editModel.StartLocal"
+                           @bind:format="yyyy-MM-ddTHH:mm" />
+
+                </div>
+
+
+                @* =============================================
+                   END TIME
+                   ============================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Ended
+                    </label>
+
+
+                    <input type="datetime-local"
+                           class="form-control"
+                           @bind="editModel.EndLocal"
+                           @bind:format="yyyy-MM-ddTHH:mm" />
+
+
+                    <div class="form-text">
+
+                        Leave the ending time empty only if this
+                        record should remain an active timer.
+
+                    </div>
+
+                </div>
+
+
+                @* =============================================
+                   ORIGINAL SOURCE
+                   ============================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Original Source
+                    </label>
+
+
+                    <input class="form-control"
+                           value="@workLog.Source"
+                           disabled />
+
+                </div>
+
+
+                @if (workLog.LastEditedAtUtc.HasValue)
+                {
+                    <div class="alert alert-secondary">
+
+                        This record was previously edited on
+
+                        <strong>
+                            @FormatDateTime(
+                                workLog.LastEditedAtUtc.Value)
+                        </strong>.
+
+                    </div>
+                }
+
+
+                <div class="d-flex gap-2">
+
+                    <button type="submit"
+                            class="btn btn-primary"
+                            disabled="@isSaving">
+
+                        @if (isSaving)
+                        {
+                            <span>
+                                Saving...
+                            </span>
+                        }
+                        else
+                        {
+                            <span>
+                                Save Changes
+                            </span>
+                        }
+
+                    </button>
+
+
+                    <a class="btn btn-secondary"
+                       href="/time">
+
+                        Cancel
+
+                    </a>
+
+                </div>
+
+            </EditForm>
+
+        </div>
+
+    </div>
+}
+
+
+
+@code {
+
+    // =========================================================
+    // WORK LOG ID
+    // =========================================================
+
+    [Parameter]
+    public int Id { get; set; }
+
+
+
+    // =========================================================
+    // CURRENT USER
+    // =========================================================
+
+    private string? currentUserId;
+
+
+    private bool isAdmin;
+
+
+
+    // =========================================================
+    // DATA
+    // =========================================================
+
+    private WorkLog? workLog;
+
+
+    private List<Project> availableProjects =
+        new();
+
+
+    private EditModel editModel =
+        new();
+
+
+
+    // =========================================================
+    // PAGE STATE
+    // =========================================================
+
+    private bool isLoading =
+        true;
+
+
+    private bool isSaving;
+
+
+    private string? errorMessage;
+
+
+
+    // =========================================================
+    // LOAD
+    // =========================================================
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading =
+            true;
+
+
+        errorMessage =
+            null;
+
+
+        AuthenticationState state =
+            await AuthenticationStateProvider
+                .GetAuthenticationStateAsync();
+
+
+        currentUserId =
+            state.User
+
+                .FindFirst(
+                    ClaimTypes.NameIdentifier)?
+
+                .Value;
+
+
+        isAdmin =
+            state.User.IsInRole(
+                AccountRoles.Admin);
+
+
+        if (string.IsNullOrWhiteSpace(
+            currentUserId))
+        {
+            errorMessage =
+                "Unable to determine the currently logged-in user.";
+
+
+            isLoading =
+                false;
+
+
+            return;
+        }
+
+
+        // -----------------------------------------------------
+        // LOAD LOG WITH AUTHORIZATION
+        // -----------------------------------------------------
+
+        workLog =
+            await WorkLogService
+                .GetWorkLogForEditAsync(
+                    Id,
+                    currentUserId,
+                    isAdmin);
+
+
+        if (workLog == null)
+        {
+            errorMessage =
+                "The work log could not be found, or you do not have permission to edit it.";
+
+
+            isLoading =
+                false;
+
+
+            return;
+        }
+
+
+        // -----------------------------------------------------
+        // AVAILABLE PROJECTS
+        // -----------------------------------------------------
+
+        availableProjects =
+            await WorkLogService
+                .GetProjectsForEditingAsync(
+                    currentUserId,
+                    isAdmin,
+                    workLog.ProjectId);
+
+
+        // -----------------------------------------------------
+        // FILL EDIT FORM
+        // -----------------------------------------------------
+
+        editModel =
+            new EditModel
+            {
+                ProjectId =
+                    workLog.ProjectId,
+
+                Activity =
+                    workLog.Activity,
+
+                StartLocal =
+                    workLog.StartedAtUtc
+                        .ToLocalTime()
+                        .DateTime,
+
+                EndLocal =
+                    workLog.EndedAtUtc?
+                        .ToLocalTime()
+                        .DateTime
+            };
+
+
+        isLoading =
+            false;
+    }
+
+
+
+    // =========================================================
+    // SAVE
+    // =========================================================
+
+    private async Task SaveAsync()
+    {
+        if (workLog == null ||
+            string.IsNullOrWhiteSpace(
+                currentUserId))
+        {
+            return;
+        }
+
+
+        isSaving =
+            true;
+
+
+        errorMessage =
+            null;
+
+
+        try
+        {
+            DateTime startLocal =
+                DateTime.SpecifyKind(
+                    editModel.StartLocal,
+                    DateTimeKind.Local);
+
+
+            DateTimeOffset startedAtUtc =
+                new DateTimeOffset(
+                    startLocal)
+                    .ToUniversalTime();
+
+
+            DateTimeOffset? endedAtUtc =
+                null;
+
+
+            if (editModel.EndLocal.HasValue)
+            {
+                DateTime endLocal =
+                    DateTime.SpecifyKind(
+                        editModel.EndLocal.Value,
+                        DateTimeKind.Local);
+
+
+                endedAtUtc =
+                    new DateTimeOffset(
+                        endLocal)
+                        .ToUniversalTime();
+            }
+
+
+            WorkLogUpdateRequest request =
+                new()
+                {
+                    WorkLogId =
+                        workLog.Id,
+
+                    ProjectId =
+                        editModel.ProjectId,
+
+                    Activity =
+                        editModel.Activity,
+
+                    StartedAtUtc =
+                        startedAtUtc,
+
+                    EndedAtUtc =
+                        endedAtUtc
+                };
+
+
+            await WorkLogService
+                .UpdateWorkLogAsync(
+                    request,
+                    currentUserId,
+                    isAdmin);
+
+
+            Navigation.NavigateTo(
+                "/time");
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            errorMessage =
+                exception.Message;
+        }
+        catch (InvalidOperationException exception)
+        {
+            errorMessage =
+                exception.Message;
+        }
+        catch (Exception exception)
+        {
+            errorMessage =
+                $"The work log could not be saved: {exception.Message}";
+        }
+        finally
+        {
+            isSaving =
+                false;
+        }
+    }
+
+
+
+    // =========================================================
+    // DISPLAY NAME
+    // =========================================================
+
+    private static string GetDisplayName(
+        ApplicationUser? user)
+    {
+        if (user == null)
+        {
+            return "Unknown User";
+        }
+
+
+        string name =
+            $"{user.FirstName} {user.LastName}"
+                .Trim();
+
+
+        if (!string.IsNullOrWhiteSpace(
+            name))
+        {
+            return name;
+        }
+
+
+        return user.Email ??
+            "Unknown User";
+    }
+
+
+
+    // =========================================================
+    // FORMAT DATE
+    // =========================================================
+
+    private static string FormatDateTime(
+        DateTimeOffset time)
+    {
+        return time
+            .ToLocalTime()
+            .ToString(
+                "MMMM d, yyyy h:mm tt");
+    }
+
+
+
+    // =========================================================
+    // EDIT FORM MODEL
+    // =========================================================
+
+    private sealed class EditModel
+    {
+        public int? ProjectId { get; set; }
+
+
+        public WorkActivity Activity { get; set; }
+
+
+        public DateTime StartLocal { get; set; }
+
+
+        public DateTime? EndLocal { get; set; }
+    }
+}

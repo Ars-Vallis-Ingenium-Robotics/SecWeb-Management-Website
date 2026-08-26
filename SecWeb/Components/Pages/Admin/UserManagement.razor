@@ -1,0 +1,1139 @@
+@page "/admin/users"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using System.Text
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.EntityFrameworkCore
+@using SecWeb.Data
+@using SecWeb.Services
+
+@attribute [Authorize(Roles = AccountRoles.Admin)]
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IAccountAdministrationEmailSender EmailSender
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>User Management</PageTitle>
+
+<h1>User Management</h1>
+
+<p>
+    Create Member or Admin accounts, resend pending invitations,
+    and manage global SecWeb access.
+</p>
+
+@if (!string.IsNullOrWhiteSpace(successMessage))
+{
+    <div class="alert alert-success" role="alert">
+        @successMessage
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="alert alert-danger" role="alert">
+        @errorMessage
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(warningMessage))
+{
+    <div class="alert alert-warning" role="alert">
+        @warningMessage
+    </div>
+}
+
+<div class="card mb-4">
+
+    <div class="card-header">
+        <strong>Create User</strong>
+    </div>
+
+    <div class="card-body">
+
+        <p class="text-secondary">
+            The new user receives a secure email invitation to create
+            their password. Project Lead assignments are managed inside
+            each project, not from this page.
+        </p>
+
+        <EditForm Model="newUser"
+                  OnValidSubmit="CreateUserAsync">
+
+            <DataAnnotationsValidator />
+
+            <ValidationSummary class="text-danger"
+                               role="alert" />
+
+            <div class="row">
+
+                <div class="col-md-6 mb-3">
+
+                    <label class="form-label">
+                        First Name
+                    </label>
+
+                    <InputText class="form-control"
+                               @bind-Value="newUser.FirstName" />
+
+                    <ValidationMessage For="() => newUser.FirstName"
+                                       class="text-danger" />
+
+                </div>
+
+
+                <div class="col-md-6 mb-3">
+
+                    <label class="form-label">
+                        Last Name
+                    </label>
+
+                    <InputText class="form-control"
+                               @bind-Value="newUser.LastName" />
+
+                    <ValidationMessage For="() => newUser.LastName"
+                                       class="text-danger" />
+
+                </div>
+
+            </div>
+
+
+            <div class="mb-3">
+
+                <label class="form-label">
+                    Email
+                </label>
+
+                <InputText class="form-control"
+                           type="email"
+                           @bind-Value="newUser.Email" />
+
+                <ValidationMessage For="() => newUser.Email"
+                                   class="text-danger" />
+
+            </div>
+
+
+            <div class="mb-3">
+
+                <label class="form-label">
+                    Account Type
+                </label>
+
+                <InputSelect class="form-select"
+                             @bind-Value="newUser.Role">
+
+                    <option value="@AccountRoles.Member">
+                        Member
+                    </option>
+
+                    <option value="@AccountRoles.Admin">
+                        Admin
+                    </option>
+
+                </InputSelect>
+
+            </div>
+
+
+            <button type="submit"
+                    class="btn btn-primary"
+                    disabled="@isCreatingUser">
+
+                @(isCreatingUser
+                    ? "Creating Account..."
+                    : "Create Account")
+
+            </button>
+
+        </EditForm>
+
+    </div>
+
+</div>
+
+
+<div class="card">
+
+    <div class="card-header d-flex justify-content-between align-items-center">
+
+        <strong>
+            Existing Users
+        </strong>
+
+
+        <button type="button"
+                class="btn btn-sm btn-outline-secondary"
+                disabled="@isLoadingUsers"
+                @onclick="LoadUsersAsync">
+
+            Refresh
+
+        </button>
+
+    </div>
+
+
+    <div class="card-body">
+
+        @if (isLoadingUsers)
+        {
+            <p>
+                <em>Loading users...</em>
+            </p>
+        }
+        else if (users.Count == 0)
+        {
+            <p class="mb-0">
+                No users were found.
+            </p>
+        }
+        else
+        {
+            <div class="table-responsive">
+
+                <table class="table table-striped align-middle">
+
+                    <thead>
+
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Access Level</th>
+                            <th>Account Status</th>
+                            <th>Actions</th>
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                        @foreach (UserRow row in users)
+                        {
+                            <tr>
+
+                                <td>
+                                    @GetDisplayName(row.User)
+                                </td>
+
+
+                                <td>
+                                    @row.User.Email
+                                </td>
+
+
+                                <td>
+
+                                    @if (row.Role == AccountRoles.Admin)
+                                    {
+                                        <span class="badge text-bg-danger">
+                                            Admin
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge text-bg-secondary">
+                                            Member
+                                        </span>
+                                    }
+
+
+                                    @if (row.IsPermanentAdmin)
+                                    {
+                                        <span class="badge text-bg-dark ms-1">
+                                            Permanent
+                                        </span>
+                                    }
+
+                                </td>
+
+
+                                <td>
+
+                                    @if (!row.HasPassword)
+                                    {
+                                        <span class="text-warning">
+                                            Invitation Pending
+                                        </span>
+                                    }
+                                    else if (!row.User.EmailConfirmed)
+                                    {
+                                        <span class="text-warning">
+                                            Email Confirmation Pending
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-success">
+                                            Active
+                                        </span>
+                                    }
+
+                                </td>
+
+
+                                <td>
+
+                                    <div class="d-flex flex-wrap gap-2">
+
+                                        @if (!row.HasPassword)
+                                        {
+                                            <button type="button"
+                                                    class="btn btn-sm btn-outline-success"
+                                                    @onclick="() => ResendInvitationAsync(row)">
+
+                                                Resend Invitation
+
+                                            </button>
+                                        }
+
+
+                                        @if (!row.IsPermanentAdmin)
+                                        {
+                                            @if (row.Role == AccountRoles.Member)
+                                            {
+                                                <button type="button"
+                                                        class="btn btn-sm btn-outline-danger"
+                                                        @onclick="() => ChangeRoleAsync(row, AccountRoles.Admin)">
+
+                                                    Make Admin
+
+                                                </button>
+                                            }
+                                            else if (row.User.Id == currentUserId)
+                                            {
+                                                <span class="text-secondary">
+                                                    You cannot demote your own account.
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <button type="button"
+                                                        class="btn btn-sm btn-outline-secondary"
+                                                        @onclick="() => ChangeRoleAsync(row, AccountRoles.Member)">
+
+                                                    Make Member
+
+                                                </button>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="text-secondary">
+                                                Permanent Admin account
+                                            </span>
+                                        }
+
+                                    </div>
+
+                                </td>
+
+                            </tr>
+                        }
+
+                    </tbody>
+
+                </table>
+
+            </div>
+        }
+
+    </div>
+
+</div>
+
+
+@code {
+
+    // =========================================================
+    // CREATE USER FORM
+    // =========================================================
+
+    private readonly CreateUserModel newUser =
+        new()
+        {
+            Role =
+                AccountRoles.Member
+        };
+
+
+    // =========================================================
+    // USERS
+    // =========================================================
+
+    private List<UserRow> users =
+        new();
+
+
+    private string? currentUserId;
+
+
+    // =========================================================
+    // PAGE STATE
+    // =========================================================
+
+    private bool isCreatingUser;
+
+
+    private bool isLoadingUsers =
+        true;
+
+
+    private string? successMessage;
+
+
+    private string? errorMessage;
+
+
+    private string? warningMessage;
+
+
+
+    // =========================================================
+    // INITIALIZE
+    // =========================================================
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuthenticationState state =
+            await AuthenticationStateProvider
+                .GetAuthenticationStateAsync();
+
+
+        currentUserId =
+            state.User
+                .FindFirst(
+                    ClaimTypes.NameIdentifier)?
+                .Value;
+
+
+        await LoadUsersAsync();
+    }
+
+
+
+    // =========================================================
+    // LOAD USERS
+    // =========================================================
+
+    private async Task LoadUsersAsync()
+    {
+        isLoadingUsers =
+            true;
+
+
+        try
+        {
+            List<ApplicationUser> identityUsers =
+                await UserManager.Users
+
+                    .OrderBy(
+                        user =>
+                            user.LastName)
+
+                    .ThenBy(
+                        user =>
+                            user.FirstName)
+
+                    .ThenBy(
+                        user =>
+                            user.Email)
+
+                    .ToListAsync();
+
+
+            List<UserRow> loadedUsers =
+                new();
+
+
+            foreach (
+                ApplicationUser user
+                in identityUsers)
+            {
+                IList<string> roles =
+                    await UserManager
+                        .GetRolesAsync(
+                            user);
+
+
+                bool hasPassword =
+                    await UserManager
+                        .HasPasswordAsync(
+                            user);
+
+
+                loadedUsers.Add(
+                    new UserRow
+                    {
+                        User =
+                            user,
+
+                        Role =
+                            roles.Contains(
+                                AccountRoles.Admin)
+
+                                ? AccountRoles.Admin
+
+                                : AccountRoles.Member,
+
+                        HasPassword =
+                            hasPassword,
+
+                        IsPermanentAdmin =
+                            string.Equals(
+                                user.Email,
+                                AccountRoles.PermanentAdminEmail,
+                                StringComparison.OrdinalIgnoreCase)
+                    });
+            }
+
+
+            users =
+                loadedUsers;
+        }
+        catch (Exception exception)
+        {
+            errorMessage =
+                $"The user list could not be loaded: {exception.Message}";
+        }
+        finally
+        {
+            isLoadingUsers =
+                false;
+        }
+    }
+
+
+
+    // =========================================================
+    // CREATE USER
+    // =========================================================
+
+    private async Task CreateUserAsync()
+    {
+        if (isCreatingUser)
+        {
+            return;
+        }
+
+
+        isCreatingUser =
+            true;
+
+
+        ClearMessages();
+
+
+        try
+        {
+            string email =
+                newUser.Email.Trim();
+
+
+            string role =
+                newUser.Role;
+
+
+            // -----------------------------------------------------
+            // SECRETARY ACCOUNT IS ALWAYS ADMIN
+            // -----------------------------------------------------
+
+            if (string.Equals(
+                email,
+                AccountRoles.PermanentAdminEmail,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                role =
+                    AccountRoles.Admin;
+            }
+
+
+            // -----------------------------------------------------
+            // ONLY MEMBER / ADMIN ARE GLOBAL ROLES
+            // -----------------------------------------------------
+
+            if (role != AccountRoles.Member &&
+                role != AccountRoles.Admin)
+            {
+                throw new InvalidOperationException(
+                    "The selected account type is invalid.");
+            }
+
+
+            // -----------------------------------------------------
+            // DUPLICATE EMAIL CHECK
+            // -----------------------------------------------------
+
+            ApplicationUser? existingUser =
+                await UserManager
+                    .FindByEmailAsync(
+                        email);
+
+
+            if (existingUser != null)
+            {
+                throw new InvalidOperationException(
+                    "An account already exists with that email address.");
+            }
+
+
+            // -----------------------------------------------------
+            // CREATE ACCOUNT WITHOUT PASSWORD
+            // -----------------------------------------------------
+
+            ApplicationUser user =
+                new()
+                {
+                    UserName =
+                        email,
+
+                    Email =
+                        email,
+
+                    FirstName =
+                        newUser.FirstName.Trim(),
+
+                    LastName =
+                        newUser.LastName.Trim(),
+
+                    EmailConfirmed =
+                        false
+                };
+
+
+            IdentityResult createResult =
+                await UserManager
+                    .CreateAsync(
+                        user);
+
+
+            if (!createResult.Succeeded)
+            {
+                throw new InvalidOperationException(
+                    FormatIdentityErrors(
+                        createResult.Errors));
+            }
+
+
+            // -----------------------------------------------------
+            // ASSIGN GLOBAL ROLE
+            // -----------------------------------------------------
+
+            IdentityResult roleResult =
+                await UserManager
+                    .AddToRoleAsync(
+                        user,
+                        role);
+
+
+            if (!roleResult.Succeeded)
+            {
+                await UserManager
+                    .DeleteAsync(
+                        user);
+
+
+                throw new InvalidOperationException(
+                    FormatIdentityErrors(
+                        roleResult.Errors));
+            }
+
+
+            // -----------------------------------------------------
+            // SEND INVITATION
+            // -----------------------------------------------------
+
+            try
+            {
+                await SendInvitationAsync(
+                    user,
+                    role);
+
+
+                successMessage =
+                    $"{GetDisplayName(user)} was created as a {role}. " +
+                    "An account setup email was sent.";
+            }
+            catch (Exception exception)
+            {
+                warningMessage =
+                    $"{GetDisplayName(user)} was created as a {role}, " +
+                    "but SecWeb could not send the invitation email. " +
+                    $"Use Resend Invitation below. Details: {exception.Message}";
+            }
+
+
+            ResetCreateUserForm();
+
+
+            await LoadUsersAsync();
+        }
+        catch (Exception exception)
+        {
+            errorMessage =
+                exception.Message;
+        }
+        finally
+        {
+            isCreatingUser =
+                false;
+        }
+    }
+
+
+
+    // =========================================================
+    // SEND ACCOUNT INVITATION
+    // =========================================================
+
+    private async Task SendInvitationAsync(
+        ApplicationUser user,
+        string role)
+    {
+        if (string.IsNullOrWhiteSpace(
+            user.Email))
+        {
+            throw new InvalidOperationException(
+                "The account does not have an email address.");
+        }
+
+
+        string token =
+            await UserManager
+                .GeneratePasswordResetTokenAsync(
+                    user);
+
+
+        string encodedToken =
+            WebEncoders.Base64UrlEncode(
+                Encoding.UTF8.GetBytes(
+                    token));
+
+
+        string invitationUrl =
+            NavigationManager
+                .GetUriWithQueryParameters(
+                    NavigationManager
+
+                        .ToAbsoluteUri(
+                            "Account/AcceptInvitation")
+
+                        .AbsoluteUri,
+
+                    new Dictionary<string, object?>
+                    {
+                        ["userId"] =
+                            user.Id,
+
+                        ["code"] =
+                            encodedToken
+                    });
+
+
+        await EmailSender
+            .SendAccountInvitationAsync(
+                user.Email,
+                user.FirstName,
+                role,
+                invitationUrl);
+    }
+
+
+
+    // =========================================================
+    // RESEND INVITATION
+    // =========================================================
+
+    private async Task ResendInvitationAsync(
+        UserRow row)
+    {
+        ClearMessages();
+
+
+        try
+        {
+            ApplicationUser? user =
+                await UserManager
+                    .FindByIdAsync(
+                        row.User.Id);
+
+
+            if (user == null)
+            {
+                throw new InvalidOperationException(
+                    "The user could not be found.");
+            }
+
+
+            if (await UserManager
+                .HasPasswordAsync(
+                    user))
+            {
+                throw new InvalidOperationException(
+                    "This account has already been set up.");
+            }
+
+
+            await SendInvitationAsync(
+                user,
+                row.Role);
+
+
+            successMessage =
+                $"A new invitation was sent to {user.Email}.";
+        }
+        catch (Exception exception)
+        {
+            errorMessage =
+                exception.Message;
+        }
+    }
+
+
+
+    // =========================================================
+    // CHANGE GLOBAL ROLE
+    // =========================================================
+    //
+    // Global roles are only:
+    //
+    // Member
+    // Admin
+    //
+    // Project Lead assignments are NOT handled here.
+    // =========================================================
+
+    private async Task ChangeRoleAsync(
+        UserRow row,
+        string newRole)
+    {
+        ClearMessages();
+
+
+        try
+        {
+            // -----------------------------------------------------
+            // VALID ROLE
+            // -----------------------------------------------------
+
+            if (newRole != AccountRoles.Member &&
+                newRole != AccountRoles.Admin)
+            {
+                throw new InvalidOperationException(
+                    "That role change is not permitted.");
+            }
+
+
+            ApplicationUser? user =
+                await UserManager
+                    .FindByIdAsync(
+                        row.User.Id);
+
+
+            if (user == null)
+            {
+                throw new InvalidOperationException(
+                    "The user could not be found.");
+            }
+
+
+            // -----------------------------------------------------
+            // PERMANENT ADMIN CANNOT CHANGE
+            // -----------------------------------------------------
+
+            if (string.Equals(
+                user.Email,
+                AccountRoles.PermanentAdminEmail,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "The permanent Secretary Admin account cannot be changed.");
+            }
+
+
+            // -----------------------------------------------------
+            // ADMIN CANNOT DEMOTE THEMSELVES
+            // -----------------------------------------------------
+
+            if (user.Id == currentUserId &&
+                newRole != AccountRoles.Admin)
+            {
+                throw new InvalidOperationException(
+                    "You cannot demote your own Admin account.");
+            }
+
+
+            IList<string> currentRoles =
+                await UserManager
+                    .GetRolesAsync(
+                        user);
+
+
+            if (currentRoles.Contains(
+                newRole))
+            {
+                return;
+            }
+
+
+            // -----------------------------------------------------
+            // REMOVE EXISTING GLOBAL ROLES
+            // -----------------------------------------------------
+
+            if (currentRoles.Count > 0)
+            {
+                IdentityResult removeResult =
+                    await UserManager
+                        .RemoveFromRolesAsync(
+                            user,
+                            currentRoles);
+
+
+                if (!removeResult.Succeeded)
+                {
+                    throw new InvalidOperationException(
+                        FormatIdentityErrors(
+                            removeResult.Errors));
+                }
+            }
+
+
+            // -----------------------------------------------------
+            // ADD NEW GLOBAL ROLE
+            // -----------------------------------------------------
+
+            IdentityResult addResult =
+                await UserManager
+                    .AddToRoleAsync(
+                        user,
+                        newRole);
+
+
+            if (!addResult.Succeeded)
+            {
+                // Restore the previous roles if the new role fails.
+
+                foreach (
+                    string oldRole
+                    in currentRoles)
+                {
+                    await UserManager
+                        .AddToRoleAsync(
+                            user,
+                            oldRole);
+                }
+
+
+                throw new InvalidOperationException(
+                    FormatIdentityErrors(
+                        addResult.Errors));
+            }
+
+
+            // -----------------------------------------------------
+            // INVALIDATE OLD LOGIN SESSION ROLE CLAIMS
+            // -----------------------------------------------------
+
+            IdentityResult stampResult =
+                await UserManager
+                    .UpdateSecurityStampAsync(
+                        user);
+
+
+            if (!stampResult.Succeeded)
+            {
+                throw new InvalidOperationException(
+                    FormatIdentityErrors(
+                        stampResult.Errors));
+            }
+
+
+            // -----------------------------------------------------
+            // EMAIL USER
+            // -----------------------------------------------------
+
+            try
+            {
+                if (!await UserManager
+                    .HasPasswordAsync(
+                        user))
+                {
+                    await SendInvitationAsync(
+                        user,
+                        newRole);
+                }
+                else if (!string.IsNullOrWhiteSpace(
+                    user.Email))
+                {
+                    await EmailSender
+                        .SendRoleChangedAsync(
+                            user.Email,
+                            user.FirstName,
+                            newRole);
+                }
+
+
+                successMessage =
+                    $"{GetDisplayName(user)} is now a {newRole}.";
+            }
+            catch (Exception exception)
+            {
+                warningMessage =
+                    $"{GetDisplayName(user)} is now a {newRole}, " +
+                    $"but the notification email could not be sent. " +
+                    $"Details: {exception.Message}";
+            }
+
+
+            await LoadUsersAsync();
+        }
+        catch (Exception exception)
+        {
+            errorMessage =
+                exception.Message;
+        }
+    }
+
+
+
+    // =========================================================
+    // RESET CREATE USER FORM
+    // =========================================================
+
+    private void ResetCreateUserForm()
+    {
+        newUser.FirstName =
+            string.Empty;
+
+
+        newUser.LastName =
+            string.Empty;
+
+
+        newUser.Email =
+            string.Empty;
+
+
+        newUser.Role =
+            AccountRoles.Member;
+    }
+
+
+
+    // =========================================================
+    // CLEAR PAGE MESSAGES
+    // =========================================================
+
+    private void ClearMessages()
+    {
+        successMessage =
+            null;
+
+
+        errorMessage =
+            null;
+
+
+        warningMessage =
+            null;
+    }
+
+
+
+    // =========================================================
+    // DISPLAY NAME
+    // =========================================================
+
+    private static string GetDisplayName(
+        ApplicationUser user)
+    {
+        string fullName =
+            $"{user.FirstName} {user.LastName}"
+                .Trim();
+
+
+        return !string.IsNullOrWhiteSpace(
+            fullName)
+
+            ? fullName
+
+            : user.Email ??
+                "Unknown User";
+    }
+
+
+
+    // =========================================================
+    // IDENTITY ERROR FORMATTER
+    // =========================================================
+
+    private static string FormatIdentityErrors(
+        IEnumerable<IdentityError> errors)
+    {
+        return string.Join(
+            " ",
+            errors.Select(
+                error =>
+                    error.Description));
+    }
+
+
+
+    // =========================================================
+    // DISPLAY USER
+    // =========================================================
+
+    private sealed class UserRow
+    {
+        public ApplicationUser User { get; set; } =
+            default!;
+
+
+        public string Role { get; set; } =
+            AccountRoles.Member;
+
+
+        public bool HasPassword { get; set; }
+
+
+        public bool IsPermanentAdmin { get; set; }
+    }
+
+
+
+    // =========================================================
+    // CREATE USER FORM MODEL
+    // =========================================================
+
+    private sealed class CreateUserModel
+    {
+        [Required]
+        [StringLength(100)]
+        public string FirstName { get; set; } =
+            string.Empty;
+
+
+        [Required]
+        [StringLength(100)]
+        public string LastName { get; set; } =
+            string.Empty;
+
+
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } =
+            string.Empty;
+
+
+        [Required]
+        public string Role { get; set; } =
+            AccountRoles.Member;
+    }
+}

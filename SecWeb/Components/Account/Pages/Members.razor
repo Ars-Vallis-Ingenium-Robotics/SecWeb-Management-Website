@@ -1,0 +1,375 @@
+﻿@page "/members"
+
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using SecWeb.Data
+@using SecWeb.Data.Models
+
+@attribute [Authorize]
+
+@inject UserManager<ApplicationUser> UserManager
+@inject ApplicationDbContext DbContext
+
+<PageTitle>Member List</PageTitle>
+
+
+<h1>Member List</h1>
+
+<p>
+    View SecWeb members and the projects and teams they are part of.
+</p>
+
+
+@if (isLoading)
+{
+    <p>
+        <em>Loading members...</em>
+    </p>
+}
+else if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="alert alert-danger">
+        @errorMessage
+    </div>
+}
+else
+{
+    <div class="card">
+
+        <div class="card-header">
+            <strong>Members</strong>
+        </div>
+
+
+        <div class="card-body">
+
+            @if (members.Count == 0)
+            {
+                <p class="mb-0">
+                    No members were found.
+                </p>
+            }
+            else
+            {
+                <div class="table-responsive">
+
+                    <table class="table table-striped align-middle">
+
+                        <thead>
+
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Projects / Teams</th>
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            @foreach (MemberRow member in members)
+                            {
+                                <tr>
+
+                                    @* =================================
+                                       NAME
+                                       ================================= *@
+
+                                    <td>
+                                        @member.FirstName
+                                        @member.LastName
+                                    </td>
+
+
+                                    @* =================================
+                                       EMAIL
+                                       ================================= *@
+
+                                    <td>
+                                        @member.Email
+                                    </td>
+
+
+                                    @* =================================
+                                       PROJECT / TEAM MEMBERSHIPS
+                                       ================================= *@
+
+                                    <td>
+
+                                        @if (member.Memberships.Count == 0)
+                                        {
+                                            <span class="text-secondary">
+                                                Not assigned to a project
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            @foreach (
+                                                MemberProjectMembership membership
+                                                in member.Memberships)
+                                            {
+                                                <div class="mb-2">
+
+                                                    <strong>
+                                                        @membership.ProjectName
+                                                    </strong>
+
+                                                    <span class="text-secondary">
+                                                        —
+                                                    </span>
+
+                                                    <span>
+                                                        @membership.TeamName
+                                                    </span>
+
+
+                                                    @if (membership.IsLead)
+                                                    {
+                                                        <span class="badge text-bg-primary ms-1">
+                                                            Lead
+                                                        </span>
+                                                    }
+
+                                                </div>
+                                            }
+                                        }
+
+                                    </td>
+
+                                </tr>
+                            }
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+            }
+
+        </div>
+
+    </div>
+}
+
+
+
+@code {
+
+    // =========================================================
+    // PAGE DATA
+    // =========================================================
+
+    private List<MemberRow> members =
+        new();
+
+
+    private bool isLoading =
+        true;
+
+
+    private string? errorMessage;
+
+
+
+    // =========================================================
+    // INITIAL LOAD
+    // =========================================================
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMembersAsync();
+    }
+
+
+
+    // =========================================================
+    // LOAD MEMBERS
+    // =========================================================
+
+    private async Task LoadMembersAsync()
+    {
+        isLoading =
+            true;
+
+
+        errorMessage =
+            null;
+
+
+        try
+        {
+            // -------------------------------------------------
+            // LOAD ALL SECWEB USERS
+            // -------------------------------------------------
+
+            List<ApplicationUser> users =
+                await UserManager.Users
+
+                    .AsNoTracking()
+
+                    .OrderBy(user =>
+                        user.LastName)
+
+                    .ThenBy(user =>
+                        user.FirstName)
+
+                    .ThenBy(user =>
+                        user.Email)
+
+                    .ToListAsync();
+
+
+
+            // -------------------------------------------------
+            // LOAD ALL PROJECT MEMBERSHIPS
+            // -------------------------------------------------
+
+            List<ProjectMembership> projectMemberships =
+                await DbContext.ProjectMemberships
+
+                    .AsNoTracking()
+
+                    .Include(membership =>
+                        membership.Project)
+
+                    .Include(membership =>
+                        membership.Team)
+
+                    .OrderBy(membership =>
+                        membership.Project!.Name)
+
+                    .ThenBy(membership =>
+                        membership.Team!.Name)
+
+                    .ToListAsync();
+
+
+
+            List<MemberRow> rows =
+                new();
+
+
+
+            // -------------------------------------------------
+            // BUILD ONE MEMBER ROW PER USER
+            // -------------------------------------------------
+
+            foreach (
+                ApplicationUser user
+                in users)
+            {
+                List<MemberProjectMembership> memberships =
+                    projectMemberships
+
+                        .Where(
+                            membership =>
+                                membership.UserId ==
+                                user.Id)
+
+                        .Select(
+                            membership =>
+                                new MemberProjectMembership
+                                {
+                                    ProjectName =
+                                        membership.Project?.Name
+                                        ?? "Unknown Project",
+
+                                    TeamName =
+                                        membership.Team?.Name
+                                        ?? "Unknown Team",
+
+                                    IsLead =
+                                        membership.Role ==
+                                        ProjectRole.Lead
+                                })
+
+                        .OrderBy(
+                            membership =>
+                                membership.ProjectName)
+
+                        .ThenBy(
+                            membership =>
+                                membership.TeamName)
+
+                        .ToList();
+
+
+
+                rows.Add(
+                    new MemberRow
+                    {
+                        FirstName =
+                            user.FirstName,
+
+                        LastName =
+                            user.LastName,
+
+                        Email =
+                            user.Email
+                            ?? string.Empty,
+
+                        Memberships =
+                            memberships
+                    });
+            }
+
+
+
+            members =
+                rows;
+        }
+        catch (Exception exception)
+        {
+            errorMessage =
+                "The member list could not be loaded.";
+
+            Console.WriteLine(
+                exception);
+        }
+
+
+        isLoading =
+            false;
+    }
+
+
+
+    // =========================================================
+    // MEMBER ROW MODEL
+    // =========================================================
+
+    private sealed class MemberRow
+    {
+        public string FirstName { get; set; } =
+            "";
+
+        public string LastName { get; set; } =
+            "";
+
+        public string Email { get; set; } =
+            "";
+
+        public List<MemberProjectMembership> Memberships
+        { get; set; } =
+            new();
+    }
+
+
+
+    // =========================================================
+    // PROJECT MEMBERSHIP DISPLAY MODEL
+    // =========================================================
+
+    private sealed class MemberProjectMembership
+    {
+        public string ProjectName { get; set; } =
+            "";
+
+        public string TeamName { get; set; } =
+            "";
+
+        public bool IsLead { get; set; }
+    }
+}

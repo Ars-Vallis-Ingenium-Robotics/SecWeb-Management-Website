@@ -1,0 +1,586 @@
+﻿@page "/time/new"
+
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using SecWeb.Data.Models
+@using SecWeb.Services
+
+@attribute [Authorize]
+
+@inject WorkLogService WorkLogService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Add Time</PageTitle>
+
+
+@if (isLoading)
+{
+    <p>
+        <em>Loading...</em>
+    </p>
+}
+else if (!string.IsNullOrWhiteSpace(loadError))
+{
+    <div class="alert alert-danger">
+        @loadError
+    </div>
+
+
+    <a class="btn btn-secondary"
+       href="/time">
+
+        Back to Time Tracking
+
+    </a>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-start mb-4">
+
+        <div>
+
+            <h1>Add Time</h1>
+
+            <p class="mb-0">
+                Manually add work you completed for AVI Robotics
+                or one of your projects.
+            </p>
+
+        </div>
+
+
+        <a class="btn btn-outline-secondary"
+           href="/time">
+
+            Back
+
+        </a>
+
+    </div>
+
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger">
+            @errorMessage
+        </div>
+    }
+
+
+    <div class="card">
+
+        <div class="card-header">
+            <strong>New Time Entry</strong>
+        </div>
+
+
+        <div class="card-body">
+
+            @if (availableProjects.Count == 0)
+            {
+                <div class="alert alert-warning mb-0">
+
+                    You do not currently have any projects available
+                    for time logging.
+
+                </div>
+            }
+            else
+            {
+                @* =================================================
+                   PROJECT
+                   ================================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Project
+                    </label>
+
+
+                    <select class="form-select"
+                            @bind="selectedProjectId">
+
+                        <option value="0">
+                            Select a project...
+                        </option>
+
+
+                        @foreach (
+                            Project project
+                            in availableProjects)
+                        {
+                            <option value="@project.Id">
+                                @project.Name
+                            </option>
+                        }
+
+                    </select>
+
+
+                    <div class="form-text">
+
+                        AVI Robotics is available to everyone.
+                        Other projects appear when you are a member
+                        of one of their teams/subsystems.
+
+                    </div>
+
+                </div>
+
+
+                @* =================================================
+                   ACTIVITY
+                   ================================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Activity
+                    </label>
+
+
+                    <select class="form-select"
+                            @bind="selectedActivity">
+
+                        <option value="@WorkActivity.Meeting">
+                            Meeting
+                        </option>
+
+                        <option value="@WorkActivity.Booth">
+                            Booth
+                        </option>
+
+                        <option value="@WorkActivity.Working">
+                            Working
+                        </option>
+
+                        <option value="@WorkActivity.Volunteering">
+                            Volunteering
+                        </option>
+
+                    </select>
+
+                </div>
+
+
+                @* =================================================
+                   START DATE / TIME
+                   ================================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Started
+                    </label>
+
+
+                    <input type="datetime-local"
+                           class="form-control"
+                           @bind="startedLocal"
+                           @bind:format="yyyy-MM-ddTHH:mm" />
+
+                </div>
+
+
+                @* =================================================
+                   END DATE / TIME
+                   ================================================= *@
+
+                <div class="mb-3">
+
+                    <label class="form-label">
+                        Ended
+                    </label>
+
+
+                    <input type="datetime-local"
+                           class="form-control"
+                           @bind="endedLocal"
+                           @bind:format="yyyy-MM-ddTHH:mm" />
+
+                </div>
+
+
+                @* =================================================
+                   PREVIEW
+                   ================================================= *@
+
+                @if (endedLocal > startedLocal)
+                {
+                    <div class="alert alert-secondary">
+
+                        <strong>
+                            Duration:
+                        </strong>
+
+                        @FormatDuration(
+                            endedLocal -
+                            startedLocal)
+
+                    </div>
+                }
+
+
+                @* =================================================
+                   SAVE
+                   ================================================= *@
+
+                <div class="d-flex gap-2">
+
+                    <button type="button"
+                            class="btn btn-primary"
+                            disabled="@isSaving"
+                            @onclick="SaveAsync">
+
+                        @if (isSaving)
+                        {
+                            <span>
+                                Saving...
+                            </span>
+                        }
+                        else
+                        {
+                            <span>
+                                Add Time
+                            </span>
+                        }
+
+                    </button>
+
+
+                    <a class="btn btn-secondary"
+                       href="/time">
+
+                        Cancel
+
+                    </a>
+
+                </div>
+            }
+
+        </div>
+
+    </div>
+}
+
+
+
+@code {
+
+    // =========================================================
+    // CURRENT USER
+    // =========================================================
+
+    private string? currentUserId;
+
+
+
+    // =========================================================
+    // PROJECTS
+    // =========================================================
+
+    private List<Project> availableProjects =
+        new();
+
+
+
+    // =========================================================
+    // FORM DATA
+    // =========================================================
+
+    private int selectedProjectId;
+
+
+    private WorkActivity selectedActivity =
+        WorkActivity.Working;
+
+
+    private DateTime startedLocal;
+
+
+    private DateTime endedLocal;
+
+
+
+    // =========================================================
+    // PAGE STATE
+    // =========================================================
+
+    private bool isLoading =
+        true;
+
+
+    private bool isSaving;
+
+
+    private string? loadError;
+
+
+    private string? errorMessage;
+
+
+
+    // =========================================================
+    // LOAD PAGE
+    // =========================================================
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading =
+            true;
+
+
+        try
+        {
+            AuthenticationState state =
+                await AuthenticationStateProvider
+                    .GetAuthenticationStateAsync();
+
+
+            currentUserId =
+                state.User
+
+                    .FindFirst(
+                        ClaimTypes.NameIdentifier)?
+
+                    .Value;
+
+
+            if (string.IsNullOrWhiteSpace(
+                currentUserId))
+            {
+                loadError =
+                    "Unable to determine the currently logged-in user.";
+
+
+                return;
+            }
+
+
+            // -----------------------------------------------------
+            // PROJECTS USER CAN LOG TO
+            // -----------------------------------------------------
+
+            availableProjects =
+                await WorkLogService
+                    .GetLoggableProjectsAsync(
+                        currentUserId);
+
+
+            // -----------------------------------------------------
+            // DEFAULT PROJECT
+            // -----------------------------------------------------
+
+            Project? aviRobotics =
+                availableProjects
+
+                    .FirstOrDefault(
+                        project =>
+                            project.IsClubWide);
+
+
+            if (aviRobotics != null)
+            {
+                selectedProjectId =
+                    aviRobotics.Id;
+            }
+            else if (availableProjects.Count > 0)
+            {
+                selectedProjectId =
+                    availableProjects[0].Id;
+            }
+
+
+            // -----------------------------------------------------
+            // DEFAULT TIMES
+            // -----------------------------------------------------
+            //
+            // Default to one hour ending at the current local time.
+            //
+
+            DateTime now =
+                DateTime.Now;
+
+
+            endedLocal =
+                new DateTime(
+                    now.Year,
+                    now.Month,
+                    now.Day,
+                    now.Hour,
+                    now.Minute,
+                    0);
+
+
+            startedLocal =
+                endedLocal
+                    .AddHours(-1);
+        }
+        catch (Exception exception)
+        {
+            loadError =
+                exception.Message;
+        }
+        finally
+        {
+            isLoading =
+                false;
+        }
+    }
+
+
+
+    // =========================================================
+    // SAVE NEW TIME
+    // =========================================================
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(
+            currentUserId))
+        {
+            return;
+        }
+
+
+        errorMessage =
+            null;
+
+
+        // -----------------------------------------------------
+        // PROJECT REQUIRED
+        // -----------------------------------------------------
+
+        if (selectedProjectId <= 0)
+        {
+            errorMessage =
+                "Select a project.";
+
+
+            return;
+        }
+
+
+        // -----------------------------------------------------
+        // END MUST BE AFTER START
+        // -----------------------------------------------------
+
+        if (endedLocal <=
+            startedLocal)
+        {
+            errorMessage =
+                "The ending time must be later than the starting time.";
+
+
+            return;
+        }
+
+
+        isSaving =
+            true;
+
+
+        try
+        {
+            // -----------------------------------------------------
+            // CONVERT LOCAL BROWSER/SERVER TIME TO UTC
+            // -----------------------------------------------------
+            //
+            // SecWeb stores all WorkLog times in UTC.
+            //
+
+            DateTime localStart =
+                DateTime.SpecifyKind(
+                    startedLocal,
+                    DateTimeKind.Local);
+
+
+            DateTime localEnd =
+                DateTime.SpecifyKind(
+                    endedLocal,
+                    DateTimeKind.Local);
+
+
+            DateTimeOffset startedUtc =
+                new DateTimeOffset(
+                    localStart)
+                    .ToUniversalTime();
+
+
+            DateTimeOffset endedUtc =
+                new DateTimeOffset(
+                    localEnd)
+                    .ToUniversalTime();
+
+
+            // -----------------------------------------------------
+            // CREATE LOG
+            // -----------------------------------------------------
+
+            await WorkLogService
+                .CreateManualWorkLogAsync(
+                    currentUserId,
+                    selectedProjectId,
+                    selectedActivity,
+                    startedUtc,
+                    endedUtc);
+
+
+            // -----------------------------------------------------
+            // RETURN TO TIME TRACKING
+            // -----------------------------------------------------
+
+            Navigation.NavigateTo(
+                "/time");
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            errorMessage =
+                exception.Message;
+        }
+        catch (InvalidOperationException exception)
+        {
+            errorMessage =
+                exception.Message;
+        }
+        catch (Exception exception)
+        {
+            errorMessage =
+                $"The time entry could not be saved: {exception.Message}";
+        }
+        finally
+        {
+            isSaving =
+                false;
+        }
+    }
+
+
+
+    // =========================================================
+    // FORMAT DURATION
+    // =========================================================
+
+    private static string FormatDuration(
+        TimeSpan duration)
+    {
+        if (duration <
+            TimeSpan.Zero)
+        {
+            duration =
+                TimeSpan.Zero;
+        }
+
+
+        int totalHours =
+            (int)Math.Floor(
+                duration.TotalHours);
+
+
+        return
+            $"{totalHours}h {duration.Minutes:D2}m";
+    }
+}

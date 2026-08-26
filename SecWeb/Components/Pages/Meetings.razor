@@ -1,0 +1,259 @@
+@page "/meetings"
+
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using SecWeb.Data
+@using SecWeb.Data.Models
+@using SecWeb.Services
+
+@attribute [Authorize]
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject MeetingService MeetingService
+@inject NavigationManager Navigation
+
+<PageTitle>Meetings</PageTitle>
+
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+
+    <div>
+
+        <h1>Meetings</h1>
+
+        <p class="mb-0">
+            View meeting documentation for the project teams and
+            subsystems you belong to.
+        </p>
+
+    </div>
+
+
+    @if (canCreateMeeting)
+    {
+        <button type="button"
+                class="btn btn-primary"
+                @onclick="CreateNewMeeting">
+
+            New Meeting
+
+        </button>
+    }
+
+</div>
+
+
+@if (isLoading)
+{
+    <p>
+        <em>Loading meetings...</em>
+    </p>
+}
+else if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="alert alert-danger">
+        @errorMessage
+    </div>
+}
+else
+{
+    @if (!canCreateMeeting)
+    {
+        <div class="alert alert-secondary">
+            Only team Leads and Admins can create meetings.
+            Team members can still view meetings for teams they have joined.
+        </div>
+    }
+
+
+    @if (meetings.Count == 0)
+    {
+        <div class="alert alert-info">
+            There are no meetings available to you yet.
+        </div>
+    }
+    else
+    {
+        <div class="row">
+
+            @foreach (Meeting meeting in meetings)
+            {
+                <div class="col-md-6 col-lg-4 mb-3">
+
+                    <div class="card h-100">
+
+                        <div class="card-header">
+
+                            @if (meeting.Team?.Project != null)
+                            {
+                                <strong>
+                                    @meeting.Team.Project.Name
+                                </strong>
+
+                                <span class="text-secondary">
+                                    /
+                                </span>
+
+                                <span>
+                                    @meeting.Team.Name
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="text-warning">
+                                    Unassigned Meeting
+                                </span>
+                            }
+
+                        </div>
+
+
+                        <div class="card-body">
+
+                            <h5 class="card-title">
+                                @meeting.Title
+                            </h5>
+
+
+                            <h6 class="card-subtitle mb-2 text-body-secondary">
+                                @meeting.MeetingDate.ToString("MMMM d, yyyy")
+                            </h6>
+
+
+                            @if (!string.IsNullOrWhiteSpace(meeting.Description))
+                            {
+                                <p class="card-text">
+                                    @meeting.Description
+                                </p>
+                            }
+
+
+                            <p class="card-text mb-0">
+                                <small class="text-body-secondary">
+                                    @meeting.Segments.Count segment@(meeting.Segments.Count == 1 ? "" : "s")
+                                </small>
+                            </p>
+
+                        </div>
+
+
+                        <div class="card-footer bg-transparent">
+
+                            <button type="button"
+                                    class="btn btn-outline-primary"
+                                    @onclick="() => OpenMeeting(meeting.Id)">
+
+                                Open
+
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </div>
+            }
+
+        </div>
+    }
+}
+
+
+@code {
+
+    private string? currentUserId;
+
+    private bool isAdmin;
+
+    private bool canCreateMeeting;
+
+    private bool isLoading = true;
+
+    private string? errorMessage;
+
+    private List<Meeting> meetings = new();
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading =
+            true;
+
+
+        try
+        {
+            AuthenticationState state =
+                await AuthenticationStateProvider
+                    .GetAuthenticationStateAsync();
+
+
+            currentUserId =
+                state.User
+                    .FindFirst(
+                        ClaimTypes.NameIdentifier)?
+                    .Value;
+
+
+            isAdmin =
+                state.User.IsInRole(
+                    AccountRoles.Admin);
+
+
+            if (string.IsNullOrWhiteSpace(
+                currentUserId))
+            {
+                errorMessage =
+                    "Unable to determine the currently logged-in user.";
+
+
+                return;
+            }
+
+
+            canCreateMeeting =
+                await MeetingService
+                    .CanCreateMeetingAsync(
+                        currentUserId,
+                        isAdmin);
+
+
+            meetings =
+                await MeetingService
+                    .GetMeetingsAsync(
+                        currentUserId,
+                        isAdmin);
+        }
+        catch (Exception exception)
+        {
+            errorMessage =
+                $"Meetings could not be loaded: {exception.Message}";
+        }
+        finally
+        {
+            isLoading =
+                false;
+        }
+    }
+
+
+    private void CreateNewMeeting()
+    {
+        if (!canCreateMeeting)
+        {
+            return;
+        }
+
+
+        Navigation.NavigateTo(
+            "/meetings/new");
+    }
+
+
+    private void OpenMeeting(
+        int meetingId)
+    {
+        Navigation.NavigateTo(
+            $"/meetings/{meetingId}");
+    }
+}

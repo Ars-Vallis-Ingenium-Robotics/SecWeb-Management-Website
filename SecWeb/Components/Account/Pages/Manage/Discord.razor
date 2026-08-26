@@ -1,0 +1,441 @@
+﻿@page "/Account/Manage/Discord"
+
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using SecWeb.Services
+
+@attribute [Authorize]
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject DiscordAccountLinkService DiscordAccountLinkService
+
+<PageTitle>Discord Account</PageTitle>
+
+
+<h3>Discord Account</h3>
+
+<p>
+    Connect your Discord account to SecWeb so Chipy can associate
+    your Discord commands with your SecWeb account and work hours.
+</p>
+
+
+@if (isLoading)
+{
+    <p>
+        <em>Loading Discord account...</em>
+    </p>
+}
+else
+{
+    @* =========================================================
+       STATUS MESSAGES
+       ========================================================= *@
+
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <div class="alert alert-success">
+            @successMessage
+        </div>
+    }
+
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger">
+            @errorMessage
+        </div>
+    }
+
+
+    @* =========================================================
+       DISCORD ACCOUNT IS LINKED
+       ========================================================= *@
+
+    @if (linkInfo?.IsLinked == true)
+    {
+        <div class="card">
+
+            <div class="card-header">
+                <strong>Connected Discord Account</strong>
+            </div>
+
+
+            <div class="card-body">
+
+                <dl class="row mb-4">
+
+                    @* =========================================
+                       USERNAME
+                       ========================================= *@
+
+                    <dt class="col-sm-4">
+                        Username
+                    </dt>
+
+                    <dd class="col-sm-8">
+                        @linkInfo.DiscordUsername
+                    </dd>
+
+
+                    @* =========================================
+                       DISPLAY NAME
+                       ========================================= *@
+
+                    <dt class="col-sm-4">
+                        Display Name
+                    </dt>
+
+                    <dd class="col-sm-8">
+
+                        @if (!string.IsNullOrWhiteSpace(
+                            linkInfo.DiscordDisplayName))
+                        {
+                            <span>
+                                @linkInfo.DiscordDisplayName
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="text-secondary">
+                                Not available
+                            </span>
+                        }
+
+                    </dd>
+
+
+                    @* =========================================
+                       DISCORD USER ID
+                       ========================================= *@
+
+                    <dt class="col-sm-4">
+                        Discord User ID
+                    </dt>
+
+                    <dd class="col-sm-8">
+                        @linkInfo.DiscordUserId
+                    </dd>
+
+
+                    @* =========================================
+                       LINK DATE
+                       ========================================= *@
+
+                    <dt class="col-sm-4">
+                        Linked
+                    </dt>
+
+                    <dd class="col-sm-8">
+
+                        @if (linkInfo.DiscordLinkedAtUtc.HasValue)
+                        {
+                            <span>
+                                @(linkInfo.DiscordLinkedAtUtc.Value
+                                    .ToLocalTime()
+                                    .ToString("MMMM d, yyyy h:mm tt"))
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="text-secondary">
+                                Unknown
+                            </span>
+                        }
+
+                    </dd>
+
+                </dl>
+
+
+                @* =============================================
+                   DISCONNECT ACCOUNT
+                   ============================================= *@
+                @*
+                    This uses normal HTML instead of @onclick
+                    because Identity account-management pages may
+                    be rendered without Blazor interactivity.
+                *@
+
+                <details>
+
+                    <summary class="btn btn-outline-danger">
+                        Disconnect Discord Account
+                    </summary>
+
+
+                    <div class="alert alert-warning mt-3 mb-0">
+
+                        <p>
+                            Are you sure you want to disconnect
+                            <strong>@linkInfo.DiscordUsername</strong>
+                            from your SecWeb account?
+                        </p>
+
+
+                        <p>
+                            Your existing work-hour records will remain
+                            in SecWeb.
+                        </p>
+
+
+                        <p>
+                            Chipy will no longer recognize this Discord
+                            account until you link it again.
+                        </p>
+
+
+                        <form method="post"
+                              action="/account/manage/discord/disconnect">
+
+                            <AntiforgeryToken />
+
+
+                            <button type="submit"
+                                    class="btn btn-danger">
+
+                                Yes, Disconnect
+
+                            </button>
+
+                        </form>
+
+                    </div>
+
+                </details>
+
+            </div>
+
+        </div>
+    }
+    else
+    {
+        @* =====================================================
+           DISCORD ACCOUNT IS NOT LINKED
+           ===================================================== *@
+
+        <div class="card">
+
+            <div class="card-header">
+                <strong>Link Discord</strong>
+            </div>
+
+
+            <div class="card-body">
+
+                <p>
+                    No Discord account is currently linked to this
+                    SecWeb account.
+                </p>
+
+
+                <p>
+                    Linking Discord allows Chipy to identify you when
+                    you use:
+                </p>
+
+
+                <ul>
+
+                    <li>
+                        <code>!log</code>
+                    </li>
+
+                    <li>
+                        <code>!stop</code>
+                    </li>
+
+                    <li>
+                        <code>!time</code>
+                    </li>
+
+                    <li>
+                        <code>!all</code>
+                    </li>
+
+                </ul>
+
+
+                @* =============================================
+                   LINK DISCORD
+                   ============================================= *@
+                @*
+                    IMPORTANT:
+                    This is now a normal browser link.
+
+                    It does NOT use @onclick.
+
+                    Clicking this causes the browser to make a
+                    request to Program.cs, which then redirects
+                    the browser to Discord.
+                *@
+
+                <a class="btn btn-primary"
+                   href="/account/manage/discord/link">
+
+                    Link Discord Account
+
+                </a>
+
+            </div>
+
+        </div>
+    }
+}
+
+
+
+@code {
+
+    // =========================================================
+    // QUERY STRING VALUES
+    // =========================================================
+
+    [SupplyParameterFromQuery(
+        Name = "discordStatus")]
+    public string? DiscordStatus { get; set; }
+
+
+    [SupplyParameterFromQuery(
+        Name = "message")]
+    public string? ResultMessage { get; set; }
+
+
+
+    // =========================================================
+    // PAGE DATA
+    // =========================================================
+
+    private string? userId;
+
+
+    private DiscordLinkInfo? linkInfo;
+
+
+    private bool isLoading =
+        true;
+
+
+    private string? successMessage;
+
+
+    private string? errorMessage;
+
+
+
+    // =========================================================
+    // LOAD PAGE
+    // =========================================================
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading =
+            true;
+
+
+        successMessage =
+            null;
+
+
+        errorMessage =
+            null;
+
+
+        // -----------------------------------------------------
+        // CURRENT LOGGED-IN SECWEB USER
+        // -----------------------------------------------------
+
+        AuthenticationState authenticationState =
+            await AuthenticationStateProvider
+                .GetAuthenticationStateAsync();
+
+
+        userId =
+            authenticationState.User
+
+                .FindFirst(
+                    ClaimTypes.NameIdentifier)?
+
+                .Value;
+
+
+        if (string.IsNullOrWhiteSpace(
+            userId))
+        {
+            errorMessage =
+                "Unable to determine the currently logged-in SecWeb account.";
+
+
+            isLoading =
+                false;
+
+
+            return;
+        }
+
+
+        // -----------------------------------------------------
+        // DISCORD LINK RESULT
+        // -----------------------------------------------------
+
+        if (string.Equals(
+            DiscordStatus,
+            "linked",
+            StringComparison.OrdinalIgnoreCase))
+        {
+            successMessage =
+                "Your Discord account was linked successfully.";
+        }
+
+
+        else if (string.Equals(
+            DiscordStatus,
+            "disconnected",
+            StringComparison.OrdinalIgnoreCase))
+        {
+            successMessage =
+                "Your Discord account was disconnected successfully.";
+        }
+
+
+        else if (string.Equals(
+            DiscordStatus,
+            "cancelled",
+            StringComparison.OrdinalIgnoreCase))
+        {
+            errorMessage =
+                "Discord account linking was cancelled.";
+        }
+
+
+        else if (string.Equals(
+            DiscordStatus,
+            "error",
+            StringComparison.OrdinalIgnoreCase))
+        {
+            errorMessage =
+                !string.IsNullOrWhiteSpace(
+                    ResultMessage)
+
+                    ? ResultMessage
+
+                    : "Discord account linking failed.";
+        }
+
+
+        // -----------------------------------------------------
+        // LOAD CURRENT DISCORD CONNECTION
+        // -----------------------------------------------------
+
+        linkInfo =
+            await DiscordAccountLinkService
+                .GetLinkInfoAsync(
+                    userId);
+
+
+        isLoading =
+            false;
+    }
+}

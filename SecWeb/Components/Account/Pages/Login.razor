@@ -1,0 +1,367 @@
+﻿@page "/Account/Login"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using SecWeb.Data
+@using SecWeb.Services
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject ILoginCodeEmailSender EmailSender
+@inject ILogger<Login> Logger
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Log in</PageTitle>
+
+<h1>Log in</h1>
+
+<div class="row">
+    <div class="col-lg-6">
+        <section>
+
+            <StatusMessage Message="@errorMessage" />
+
+            <EditForm EditContext="editContext"
+                      method="post"
+                      OnSubmit="LoginUser"
+                      FormName="login">
+
+                <DataAnnotationsValidator />
+
+                <h2>Use your SecWeb account to log in.</h2>
+
+                <hr />
+
+                <ValidationSummary class="text-danger"
+                                   role="alert" />
+
+
+                <div class="form-floating mb-3">
+
+                    <InputText @bind-Value="Input.Email"
+                               id="Input.Email"
+                               class="form-control"
+                               autocomplete="username"
+                               aria-required="true"
+                               placeholder="name@example.com" />
+
+                    <label for="Input.Email"
+                           class="form-label">
+                        Email
+                    </label>
+
+                    <ValidationMessage For="() => Input.Email"
+                                       class="text-danger" />
+
+                </div>
+
+
+                <div class="form-floating mb-3">
+
+                    <InputText type="password"
+                               @bind-Value="Input.Password"
+                               id="Input.Password"
+                               class="form-control"
+                               autocomplete="current-password"
+                               aria-required="true"
+                               placeholder="password" />
+
+                    <label for="Input.Password"
+                           class="form-label">
+                        Password
+                    </label>
+
+                    <ValidationMessage For="() => Input.Password"
+                                       class="text-danger" />
+
+                </div>
+
+
+                <div class="checkbox mb-3">
+
+                    <label class="form-label">
+
+                        <InputCheckbox @bind-Value="Input.RememberMe"
+                                       class="darker-border-checkbox form-check-input" />
+
+                        Remember me
+
+                    </label>
+
+                </div>
+
+
+                <button type="submit"
+                        class="w-100 btn btn-lg btn-primary">
+
+                    Log in
+
+                </button>
+
+
+                <hr />
+
+
+                <p>
+                    <a href="Account/ForgotPassword">
+                        Forgot your password?
+                    </a>
+                </p>
+
+                <p>
+                    <a href="@(
+                       NavigationManager.GetUriWithQueryParameters(
+                           "Account/Register",
+                           new Dictionary<string, object?>
+                           {
+                               ["ReturnUrl"] = ReturnUrl
+                           }))">
+
+                        Register as a new user
+
+                    </a>
+                </p>
+
+                <p>
+                    <a href="Account/ResendEmailConfirmation">
+                        Resend email confirmation
+                    </a>
+                </p>
+
+            </EditForm>
+
+        </section>
+    </div>
+</div>
+
+
+@code {
+
+    private string? errorMessage;
+
+    private EditContext editContext = default!;
+
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+
+        editContext =
+            new EditContext(Input);
+
+
+        if (HttpMethods.IsGet(
+            HttpContext.Request.Method))
+        {
+            // Clear external authentication cookies.
+            await HttpContext.SignOutAsync(
+                IdentityConstants.ExternalScheme);
+        }
+    }
+
+
+    // ---------------------------------------------------------
+    // LOGIN
+    // ---------------------------------------------------------
+
+    public async Task LoginUser()
+    {
+        if (!editContext.Validate())
+        {
+            return;
+        }
+
+
+        // Find the account by email.
+        ApplicationUser? user =
+            await UserManager.FindByEmailAsync(
+                Input.Email);
+
+
+        // Do not reveal whether an email address exists.
+        if (user == null)
+        {
+            errorMessage =
+                "Error: Invalid login attempt.";
+
+            return;
+        }
+
+
+        // -----------------------------------------------------
+        // CHECK PASSWORD FIRST
+        // -----------------------------------------------------
+
+        SignInResult passwordCheck =
+            await SignInManager.CheckPasswordSignInAsync(
+                user,
+                Input.Password,
+                lockoutOnFailure: true);
+
+
+        if (passwordCheck.IsLockedOut)
+        {
+            Logger.LogWarning(
+                "User account locked out.");
+
+            RedirectManager.RedirectTo(
+                "Account/Lockout");
+
+            return;
+        }
+
+
+        if (!passwordCheck.Succeeded)
+        {
+            errorMessage =
+                "Error: Invalid login attempt.";
+
+            return;
+        }
+
+
+        // -----------------------------------------------------
+        // EMAIL MUST BE CONFIRMED
+        // -----------------------------------------------------
+
+        bool emailConfirmed =
+            await UserManager.IsEmailConfirmedAsync(user);
+
+
+        if (!emailConfirmed)
+        {
+            errorMessage =
+                "You must confirm your email address before logging in.";
+
+            return;
+        }
+
+
+        // -----------------------------------------------------
+        // REQUIRE TWO-FACTOR LOGIN FOR THIS ACCOUNT
+        // -----------------------------------------------------
+
+        if (!await UserManager.GetTwoFactorEnabledAsync(user))
+        {
+            IdentityResult twoFactorResult =
+                await UserManager.SetTwoFactorEnabledAsync(
+                    user,
+                    true);
+
+
+            if (!twoFactorResult.Succeeded)
+            {
+                errorMessage =
+                    "Unable to enable login verification.";
+
+                return;
+            }
+        }
+
+
+        // -----------------------------------------------------
+        // START IDENTITY LOGIN
+        //
+        // Because 2FA is enabled, this should NOT finish login.
+        // Identity creates the temporary two-factor cookie.
+        // -----------------------------------------------------
+
+        SignInResult result =
+            await SignInManager.PasswordSignInAsync(
+                user,
+                Input.Password,
+                Input.RememberMe,
+                lockoutOnFailure: false);
+
+
+        if (result.RequiresTwoFactor)
+        {
+            // Generate Identity's temporary email token.
+            string code =
+                await UserManager
+                    .GenerateTwoFactorTokenAsync(
+                        user,
+                        TokenOptions.DefaultEmailProvider);
+
+
+            try
+            {
+                await EmailSender.SendLoginCodeAsync(
+                    Input.Email,
+                    code);
+            }
+            catch (Exception exception)
+            {
+                Logger.LogError(
+                    exception,
+                    "Unable to send login verification email.");
+
+                errorMessage =
+                    "Your password was correct, but SecWeb could not send the verification email.";
+
+                return;
+            }
+
+
+            Logger.LogInformation(
+                "Login verification code sent.");
+
+
+            RedirectManager.RedirectTo(
+                "Account/LoginWithEmailCode",
+                new()
+                {
+                    ["returnUrl"] = ReturnUrl,
+                    ["rememberMe"] = Input.RememberMe
+                });
+
+            return;
+        }
+
+
+        if (result.IsLockedOut)
+        {
+            RedirectManager.RedirectTo(
+                "Account/Lockout");
+
+            return;
+        }
+
+
+        // We intentionally do not accept a normal completed
+        // password sign-in here. Email verification is required.
+        errorMessage =
+            "Unable to start email verification.";
+    }
+
+
+    private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+
+
+        [Required]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+
+        [Display(Name = "Remember me?")]
+        public bool RememberMe { get; set; }
+    }
+}

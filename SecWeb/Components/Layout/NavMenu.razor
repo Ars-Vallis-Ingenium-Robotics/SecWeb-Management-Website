@@ -1,0 +1,340 @@
+﻿@using SecWeb.Data
+
+@implements IDisposable
+
+@inject NavigationManager NavigationManager
+
+
+<div class="top-row ps-3 navbar navbar-dark">
+
+    <div class="container-fluid">
+
+        <a class="navbar-brand"
+           href="">
+
+            SecWeb
+
+        </a>
+
+    </div>
+
+</div>
+
+
+<input type="checkbox"
+       title="Navigation menu"
+       class="navbar-toggler" />
+
+
+<div class="nav-scrollable"
+     onclick="document.querySelector('.navbar-toggler').click()">
+
+    <nav class="nav flex-column">
+
+
+        @* =====================================================
+           DASHBOARD
+           ===================================================== *@
+
+        <div class="nav-item px-3">
+
+            <NavLink class="nav-link"
+                     href=""
+                     Match="NavLinkMatch.All">
+
+                <span class="bi bi-house-door-fill-nav-menu"
+                      aria-hidden="true">
+                </span>
+
+                Dashboard
+
+            </NavLink>
+
+        </div>
+
+
+
+        <AuthorizeView>
+
+            <Authorized Context="userContext">
+
+
+                @* =============================================
+                   MEETINGS
+                   ============================================= *@
+
+                <div class="nav-item px-3">
+
+                    <NavLink class="nav-link"
+                             href="meetings">
+
+                        <span class="bi bi-calendar-event-fill-nav-menu"
+                              aria-hidden="true">
+                        </span>
+
+                        Meetings
+
+                    </NavLink>
+
+                </div>
+
+
+
+                @* =============================================
+                   PROJECTS
+                   ============================================= *@
+
+                <div class="nav-item px-3">
+
+                    <NavLink class="nav-link"
+                             href="projects">
+
+                        <span class="bi bi-folder-fill-nav-menu"
+                              aria-hidden="true">
+                        </span>
+
+                        Projects
+
+                    </NavLink>
+
+                </div>
+
+
+
+                @* =============================================
+                   MEMBER LIST
+                   ============================================= *@
+
+                <div class="nav-item px-3">
+
+                    <NavLink class="nav-link"
+                             href="members">
+
+                        <span class="bi bi-people-fill-nav-menu"
+                              aria-hidden="true">
+                        </span>
+
+                        Member List
+
+                    </NavLink>
+
+                </div>
+
+
+
+                @* =============================================
+                   TIME TRACKING
+                   ============================================= *@
+
+                <div class="nav-item px-3">
+
+                    <NavLink class="nav-link"
+                             href="time">
+
+                        <span class="bi bi-list-nested-nav-menu"
+                              aria-hidden="true">
+                        </span>
+
+                        Time Tracking
+
+                    </NavLink>
+
+                </div>
+
+
+
+                @* =============================================
+                   ADMIN ONLY
+                   ============================================= *@
+
+                <AuthorizeView Roles="@AccountRoles.Admin">
+
+                    <Authorized Context="adminContext">
+
+                        <div class="nav-item px-3">
+
+                            <NavLink class="nav-link"
+                                     href="admin/users">
+
+                                <span class="bi bi-person-badge-nav-menu"
+                                      aria-hidden="true">
+                                </span>
+
+                                User Management
+
+                            </NavLink>
+
+                        </div>
+
+                    </Authorized>
+
+                </AuthorizeView>
+
+
+
+                @* =============================================
+                   MY ACCOUNT
+                   ============================================= *@
+
+                <div class="nav-item px-3">
+
+                    <NavLink class="nav-link"
+                             href="Account/Manage">
+
+                        <span class="bi bi-person-fill-nav-menu"
+                              aria-hidden="true">
+                        </span>
+
+                        My Account
+
+                    </NavLink>
+
+                </div>
+
+
+
+                @* =============================================
+                   LOGOUT
+                   ============================================= *@
+
+                <div class="nav-item px-3">
+
+                    <form action="Account/Logout"
+                          method="post">
+
+                        <AntiforgeryToken />
+
+
+                        <input type="hidden"
+                               name="ReturnUrl"
+                               value="@currentUrl" />
+
+
+                        <button type="submit"
+                                class="nav-link">
+
+                            <span class="bi bi-arrow-bar-left-nav-menu"
+                                  aria-hidden="true">
+                            </span>
+
+                            Logout
+
+                        </button>
+
+                    </form>
+
+                </div>
+
+            </Authorized>
+
+
+
+            <NotAuthorized>
+
+
+                @* =============================================
+                   REGISTER
+                   ============================================= *@
+
+                <div class="nav-item px-3">
+
+                    <NavLink class="nav-link"
+                             href="Account/Register">
+
+                        <span class="bi bi-person-fill-add-nav-menu"
+                              aria-hidden="true">
+                        </span>
+
+                        Register
+
+                    </NavLink>
+
+                </div>
+
+
+
+                @* =============================================
+                   LOGIN
+                   ============================================= *@
+
+                <div class="nav-item px-3">
+
+                    <NavLink class="nav-link"
+                             href="Account/Login">
+
+                        <span class="bi bi-person-badge-nav-menu"
+                              aria-hidden="true">
+                        </span>
+
+                        Login
+
+                    </NavLink>
+
+                </div>
+
+            </NotAuthorized>
+
+        </AuthorizeView>
+
+    </nav>
+
+</div>
+
+
+@code {
+
+    // =========================================================
+    // CURRENT URL
+    // =========================================================
+
+    private string? currentUrl;
+
+
+
+    // =========================================================
+    // INITIALIZATION
+    // =========================================================
+
+    protected override void OnInitialized()
+    {
+        currentUrl =
+            NavigationManager
+                .ToBaseRelativePath(
+                    NavigationManager.Uri);
+
+
+        NavigationManager.LocationChanged +=
+            OnLocationChanged;
+    }
+
+
+
+    // =========================================================
+    // LOCATION CHANGED
+    // =========================================================
+
+    private void OnLocationChanged(
+        object? sender,
+        LocationChangedEventArgs e)
+    {
+        currentUrl =
+            NavigationManager
+                .ToBaseRelativePath(
+                    e.Location);
+
+
+        StateHasChanged();
+    }
+
+
+
+    // =========================================================
+    // CLEANUP
+    // =========================================================
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -=
+            OnLocationChanged;
+    }
+}

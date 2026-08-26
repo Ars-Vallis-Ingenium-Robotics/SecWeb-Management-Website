@@ -1,0 +1,30 @@
+@using SecWeb.Components.Account.Shared
+
+<Router AppAssembly="typeof(Program).Assembly"
+        NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData"
+                            DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized Context="authorizationContext">
+                @if (authorizationContext.User.Identity?.IsAuthenticated == true)
+                {
+                    <div class="alert alert-danger" role="alert">
+                        You do not have permission to view this page.
+                    </div>
+
+                    <a class="btn btn-secondary" href="/">Return to Dashboard</a>
+                }
+                else
+                {
+                    <RedirectToLogin />
+                }
+            </NotAuthorized>
+
+            <Authorizing>
+                <p><em>Checking access...</em></p>
+            </Authorizing>
+        </AuthorizeRouteView>
+
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>
