@@ -7,23 +7,70 @@ namespace SecWeb.Services
         public const long MaxFileSize =
             25L * 1024L * 1024L;
 
+
         private readonly string _storageRoot;
 
 
+        // =========================================================
+        // CONSTRUCTOR
+        // =========================================================
+
         public MeetingFileStorageService(
-            IWebHostEnvironment environment)
+            IWebHostEnvironment environment,
+            IConfiguration configuration)
         {
+            // -----------------------------------------------------
+            // PRODUCTION STORAGE
+            // -----------------------------------------------------
+            //
+            // On the Linux server, set:
+            //
+            // MeetingFiles__StorageRoot=
+            //     /var/lib/secweb/MeetingTaskFiles
+            //
+            // This keeps uploaded files outside the published
+            // application so deploying a new version of SecWeb
+            // cannot accidentally delete member submissions.
+            //
+            // -----------------------------------------------------
+            // DEVELOPMENT STORAGE
+            // -----------------------------------------------------
+            //
+            // If no production path is configured, SecWeb keeps
+            // using:
+            //
+            // App_Data/MeetingTaskFiles
+            //
+            // under the normal application content directory.
+            //
+
+            string? configuredStorageRoot =
+                configuration[
+                    "MeetingFiles:StorageRoot"];
+
+
             _storageRoot =
-                Path.Combine(
-                    environment.ContentRootPath,
-                    "App_Data",
-                    "MeetingTaskFiles");
+                string.IsNullOrWhiteSpace(
+                    configuredStorageRoot)
+
+                    ? Path.Combine(
+                        environment.ContentRootPath,
+                        "App_Data",
+                        "MeetingTaskFiles")
+
+                    : Path.GetFullPath(
+                        configuredStorageRoot,
+                        environment.ContentRootPath);
 
 
             Directory.CreateDirectory(
                 _storageRoot);
         }
 
+
+        // =========================================================
+        // SAVE FILE
+        // =========================================================
 
         public async Task<StoredMeetingFile>
             SaveAsync(
@@ -115,6 +162,10 @@ namespace SecWeb.Services
         }
 
 
+        // =========================================================
+        // GET PHYSICAL FILE PATH
+        // =========================================================
+
         public string GetPhysicalPath(
             string storedFileName)
         {
@@ -128,6 +179,10 @@ namespace SecWeb.Services
                 safeFileName);
         }
 
+
+        // =========================================================
+        // DELETE FILE
+        // =========================================================
 
         public Task DeleteAsync(
             string? storedFileName)
@@ -156,12 +211,19 @@ namespace SecWeb.Services
         }
 
 
+        // =========================================================
+        // CONTENT TYPE
+        // =========================================================
+
         private static string NormalizeContentType(
             string? contentType)
         {
             string value =
-                string.IsNullOrWhiteSpace(contentType)
+                string.IsNullOrWhiteSpace(
+                    contentType)
+
                     ? "application/octet-stream"
+
                     : contentType.Trim();
 
 
@@ -170,6 +232,10 @@ namespace SecWeb.Services
                 : value[..200];
         }
 
+
+        // =========================================================
+        // FILE SIZE DISPLAY
+        // =========================================================
 
         public static string FormatMaximumSize()
         {

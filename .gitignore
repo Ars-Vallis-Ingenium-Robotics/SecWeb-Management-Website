@@ -20,6 +20,11 @@ logs/
 # Secrets
 secrets.json
 appsettings.Production.json
+.env
+*.env
+
+# SecWeb uploaded meeting/task files
+**/App_Data/MeetingTaskFiles/
 
 # ZIP backups
 *.zip

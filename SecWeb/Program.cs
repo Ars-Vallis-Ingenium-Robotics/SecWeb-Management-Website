@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using SecWeb.Bot;
@@ -67,6 +68,39 @@ builder.Services
 
 builder.Services
     .AddAuthorization();
+
+
+// =============================================================
+// NGINX / REVERSE PROXY
+// =============================================================
+//
+// In production, nginx receives the public HTTP/HTTPS request and
+// forwards it to Kestrel on localhost.
+//
+// These settings let SecWeb use the original:
+//     - Client IP address
+//     - HTTP / HTTPS scheme
+//
+// nginx and SecWeb run on the same Linux server, so the connection
+// to Kestrel comes from loopback. ASP.NET Core trusts loopback
+// proxies by default.
+//
+// ForwardLimit = 1 because there is one reverse proxy:
+// Internet -> nginx -> SecWeb
+//
+
+builder.Services
+    .Configure<ForwardedHeadersOptions>(
+        options =>
+        {
+            options.ForwardedHeaders =
+                ForwardedHeaders.XForwardedFor |
+                ForwardedHeaders.XForwardedProto;
+
+
+            options.ForwardLimit =
+                1;
+        });
 
 
 // =============================================================
@@ -248,6 +282,18 @@ builder.Services
 
 var app =
     builder.Build();
+
+
+// =============================================================
+// NGINX / FORWARDED HEADERS MIDDLEWARE
+// =============================================================
+//
+// This must run before HSTS, HTTPS redirection, authentication,
+// authorization, and any other middleware that needs to know the
+// original request scheme or client address.
+//
+
+app.UseForwardedHeaders();
 
 
 // =============================================================
