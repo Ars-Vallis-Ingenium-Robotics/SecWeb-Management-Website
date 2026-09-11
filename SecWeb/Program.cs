@@ -1,15 +1,19 @@
+using System.Net;
 using System.Security.Claims;
+
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Components.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
+
 using SecWeb.Bot;
 using SecWeb.Components;
 using SecWeb.Components.Account;
 using SecWeb.Data;
 using SecWeb.Services;
+
 
 var builder =
     WebApplication.CreateBuilder(
@@ -59,6 +63,7 @@ builder.Services
             options.DefaultSignInScheme =
                 IdentityConstants.ExternalScheme;
         })
+
     .AddIdentityCookies();
 
 
@@ -74,19 +79,21 @@ builder.Services
 // NGINX / REVERSE PROXY
 // =============================================================
 //
-// In production, nginx receives the public HTTP/HTTPS request and
-// forwards it to Kestrel on localhost.
+// Robert's nginx server receives requests from the Internet and
+// forwards them to SecWeb through localhost.
 //
-// These settings let SecWeb use the original:
-//     - Client IP address
-//     - HTTP / HTTPS scheme
+// Internet
+//    |
+//    v
+// nginx
+//    |
+//    v
+// 127.0.0.1:8124
+//    |
+//    v
+// SecWeb
 //
-// nginx and SecWeb run on the same Linux server, so the connection
-// to Kestrel comes from loopback. ASP.NET Core trusts loopback
-// proxies by default.
-//
-// ForwardLimit = 1 because there is one reverse proxy:
-// Internet -> nginx -> SecWeb
+// Only local loopback proxies are trusted.
 //
 
 builder.Services
@@ -100,26 +107,92 @@ builder.Services
 
             options.ForwardLimit =
                 1;
+
+
+            options.KnownIPNetworks.Clear();
+
+            options.KnownProxies.Clear();
+
+
+            options.KnownProxies.Add(
+                IPAddress.Loopback);
+
+
+            options.KnownProxies.Add(
+                IPAddress.IPv6Loopback);
         });
 
 
 // =============================================================
-// DATABASE
+// DATABASE CONNECTION STRING
 // =============================================================
 
 string connectionString =
     builder.Configuration
         .GetConnectionString(
             "DefaultConnection")
+
     ?? throw new InvalidOperationException(
         "Connection string 'DefaultConnection' was not found.");
 
 
-builder.Services
-    .AddDbContext<ApplicationDbContext>(
-        options =>
-            options.UseSqlServer(
-                connectionString));
+// =============================================================
+// DATABASE PROVIDER
+// =============================================================
+
+if (builder.Environment.IsDevelopment())
+{
+    // =========================================================
+    // WINDOWS DEVELOPMENT
+    // =========================================================
+    //
+    // Visual Studio continues using the existing SQL Server
+    // LocalDB database.
+    //
+
+    builder.Services
+        .AddDbContext<ApplicationDbContext>(
+            options =>
+                options.UseSqlServer(
+                    connectionString));
+}
+else
+{
+    // =========================================================
+    // LINUX PRODUCTION
+    // =========================================================
+    //
+    // Robert's Linux server uses PostgreSQL.
+    //
+
+    builder.Services
+        .AddDbContext<PostgresApplicationDbContext>(
+            options =>
+                options.UseNpgsql(
+                    connectionString));
+
+
+    // ---------------------------------------------------------
+    // APPLICATION DB CONTEXT ALIAS
+    // ---------------------------------------------------------
+    //
+    // Existing services such as:
+    //
+    // MeetingService
+    // ProjectService
+    // WorkLogService
+    //
+    // request ApplicationDbContext.
+    //
+    // In production, give those services the PostgreSQL context.
+    //
+
+    builder.Services
+        .AddScoped<ApplicationDbContext>(
+            services =>
+                services.GetRequiredService<
+                    PostgresApplicationDbContext>());
+}
 
 
 builder.Services
@@ -166,9 +239,13 @@ builder.Services
             options.Stores.SchemaVersion =
                 IdentitySchemaVersions.Version3;
         })
+
     .AddRoles<IdentityRole>()
+
     .AddEntityFrameworkStores<ApplicationDbContext>()
+
     .AddSignInManager()
+
     .AddDefaultTokenProviders();
 
 
@@ -230,9 +307,6 @@ builder.Services
 // SECWEB SERVICES
 // =============================================================
 
-// Meeting task uploads are stored outside wwwroot so they cannot
-// be downloaded without SecWeb authorization.
-
 builder.Services
     .AddSingleton<MeetingFileStorageService>();
 
@@ -285,12 +359,10 @@ var app =
 
 
 // =============================================================
-// NGINX / FORWARDED HEADERS MIDDLEWARE
+// NGINX FORWARDED HEADERS
 // =============================================================
 //
-// This must run before HSTS, HTTPS redirection, authentication,
-// authorization, and any other middleware that needs to know the
-// original request scheme or client address.
+// Must happen before HTTPS redirection and authentication.
 //
 
 app.UseForwardedHeaders();
@@ -364,13 +436,6 @@ app.UseAntiforgery();
 // =============================================================
 // DISCORD ACCOUNT LINK — START
 // =============================================================
-//
-// Browser requests:
-//
-// /account/manage/discord/link
-//
-// SecWeb creates the Discord OAuth URL and redirects the browser.
-//
 
 app.MapGet(
     "/account/manage/discord/link",
@@ -379,10 +444,6 @@ app.MapGet(
         HttpContext context,
         DiscordAccountLinkService discordLinkService) =>
     {
-        // ---------------------------------------------------------
-        // CURRENT SECWEB USER
-        // ---------------------------------------------------------
-
         string? userId =
             context.User
                 .FindFirstValue(
@@ -399,29 +460,17 @@ app.MapGet(
 
         try
         {
-            // -----------------------------------------------------
-            // CREATE DISCORD OAUTH URL
-            // -----------------------------------------------------
-
             string authorizationUrl =
                 discordLinkService
                     .CreateAuthorizationUrl(
                         userId);
 
 
-            // -----------------------------------------------------
-            // REDIRECT BROWSER TO DISCORD
-            // -----------------------------------------------------
-
             return Results.Redirect(
                 authorizationUrl);
         }
         catch (Exception exception)
         {
-            // -----------------------------------------------------
-            // CONFIGURATION ERROR
-            // -----------------------------------------------------
-
             string returnUrl =
                 QueryHelpers.AddQueryString(
                     "/Account/Manage/Discord",
@@ -440,16 +489,13 @@ app.MapGet(
                 returnUrl);
         }
     })
+
     .RequireAuthorization();
 
 
 // =============================================================
 // DISCORD ACCOUNT LINK — CALLBACK
 // =============================================================
-//
-// Discord redirects the browser back to this endpoint after
-// authorization.
-//
 
 app.MapGet(
     "/account/manage/discord/callback",
@@ -458,10 +504,6 @@ app.MapGet(
         HttpContext context,
         DiscordAccountLinkService discordLinkService) =>
     {
-        // ---------------------------------------------------------
-        // CURRENT SECWEB USER
-        // ---------------------------------------------------------
-
         string? userId =
             context.User
                 .FindFirstValue(
@@ -475,10 +517,6 @@ app.MapGet(
                 "/Account/Login");
         }
 
-
-        // ---------------------------------------------------------
-        // CHECK WHETHER USER CANCELLED
-        // ---------------------------------------------------------
 
         string? discordError =
             context.Request
@@ -494,19 +532,11 @@ app.MapGet(
         }
 
 
-        // ---------------------------------------------------------
-        // GET DISCORD AUTHORIZATION CODE
-        // ---------------------------------------------------------
-
         string? code =
             context.Request
                 .Query["code"]
                 .FirstOrDefault();
 
-
-        // ---------------------------------------------------------
-        // GET PROTECTED OAUTH STATE
-        // ---------------------------------------------------------
 
         string? state =
             context.Request
@@ -524,10 +554,6 @@ app.MapGet(
         }
 
 
-        // ---------------------------------------------------------
-        // COMPLETE DISCORD ACCOUNT LINK
-        // ---------------------------------------------------------
-
         DiscordLinkResult result =
             await discordLinkService
                 .CompleteLinkAsync(
@@ -536,20 +562,12 @@ app.MapGet(
                     state);
 
 
-        // ---------------------------------------------------------
-        // SUCCESS
-        // ---------------------------------------------------------
-
         if (result.Succeeded)
         {
             return Results.Redirect(
                 "/Account/Manage/Discord?discordStatus=linked");
         }
 
-
-        // ---------------------------------------------------------
-        // FAILURE
-        // ---------------------------------------------------------
 
         string failureUrl =
             QueryHelpers.AddQueryString(
@@ -568,16 +586,13 @@ app.MapGet(
         return Results.Redirect(
             failureUrl);
     })
+
     .RequireAuthorization();
 
 
 // =============================================================
 // DISCORD ACCOUNT — DISCONNECT
 // =============================================================
-//
-// This is POST rather than GET because it modifies the user's
-// account.
-//
 
 app.MapPost(
     "/account/manage/discord/disconnect",
@@ -587,10 +602,6 @@ app.MapPost(
         IAntiforgery antiforgery,
         DiscordAccountLinkService discordLinkService) =>
     {
-        // ---------------------------------------------------------
-        // VERIFY ANTIFORGERY TOKEN
-        // ---------------------------------------------------------
-
         try
         {
             await antiforgery
@@ -603,10 +614,6 @@ app.MapPost(
                 "The Discord disconnect request could not be verified.");
         }
 
-
-        // ---------------------------------------------------------
-        // CURRENT SECWEB USER
-        // ---------------------------------------------------------
 
         string? userId =
             context.User
@@ -621,10 +628,6 @@ app.MapPost(
                 "/Account/Login");
         }
 
-
-        // ---------------------------------------------------------
-        // DISCONNECT
-        // ---------------------------------------------------------
 
         bool disconnected =
             await discordLinkService
@@ -653,13 +656,10 @@ app.MapPost(
         }
 
 
-        // ---------------------------------------------------------
-        // RETURN TO DISCORD SETTINGS
-        // ---------------------------------------------------------
-
         return Results.Redirect(
             "/Account/Manage/Discord?discordStatus=disconnected");
     })
+
     .RequireAuthorization();
 
 

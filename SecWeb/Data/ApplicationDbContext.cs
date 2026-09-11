@@ -15,6 +15,21 @@ namespace SecWeb.Data
 
 
         // =========================================================
+        // POSTGRESQL DERIVED CONTEXT SUPPORT
+        // =========================================================
+        //
+        // This allows PostgresApplicationDbContext to inherit the
+        // entire SecWeb model without duplicating it.
+        //
+
+        protected ApplicationDbContext(
+            DbContextOptions options)
+            : base(options)
+        {
+        }
+
+
+        // =========================================================
         // MEETINGS
         // =========================================================
 
@@ -338,14 +353,50 @@ namespace SecWeb.Data
             // UNIQUE DISCORD ACCOUNT
             // =====================================================
 
-            builder.Entity<ApplicationUser>()
-                .HasIndex(user =>
-                    user.DiscordUserId)
+            var discordUserIndex =
+                builder.Entity<ApplicationUser>()
+                    .HasIndex(user =>
+                        user.DiscordUserId)
 
-                .IsUnique()
+                    .IsUnique();
 
-                .HasFilter(
+
+            // SQL Server requires the filtered index that SecWeb
+            // already used.
+            //
+            // PostgreSQL naturally permits multiple NULL values in
+            // a unique index, so it does not need this filter.
+
+            if (Database.ProviderName ==
+                "Microsoft.EntityFrameworkCore.SqlServer")
+            {
+                discordUserIndex.HasFilter(
                     "[DiscordUserId] IS NOT NULL");
+            }
+
+
+            // =====================================================
+            // POSTGRESQL MEETING DATE
+            // =====================================================
+            //
+            // MeetingDate represents a calendar date/time entered
+            // by the user rather than an absolute UTC timestamp.
+            //
+            // PostgreSQL therefore stores this value as:
+            //
+            // timestamp without time zone
+            //
+
+            if (Database.ProviderName ==
+                "Npgsql.EntityFrameworkCore.PostgreSQL")
+            {
+                builder.Entity<Meeting>()
+                    .Property(meeting =>
+                        meeting.MeetingDate)
+
+                    .HasColumnType(
+                        "timestamp without time zone");
+            }
 
 
             // =====================================================
